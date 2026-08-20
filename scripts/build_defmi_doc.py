@@ -48,6 +48,8 @@ def main() -> int:
     big = json.loads(big_path.read_text()) if big_path.exists() else None
     pvp_path = ART / "pvp.json"
     pvp = json.loads(pvp_path.read_text()) if pvp_path.exists() else None
+    same_path = ART / "same_chain.json"
+    same_chain = json.loads(same_path.read_text()) if same_path.exists() else None
 
     out: list[str] = []
     w = out.append
@@ -417,6 +419,74 @@ def main() -> int:
           "no signature --- the deadline is the whole authority, because "
           "demanding a signature would strand the money of anyone who lost a "
           "key, which is the failure this branch exists to prevent.\n")
+
+    if same_chain:
+        rows = same_chain["rows"]
+        def pick(arm, swaps, parties):
+            return next(r for r in rows if r["arm"] == arm
+                        and r["swaps"] == swaps and r["parties"] == parties)
+        biggest = max(r["swaps"] for r in rows)
+
+        w("### 6.1 On one chain, the same construction is a mistake\n")
+        w("Across two chains there is no choice: nothing spans them, so the "
+          "adaptor and its window are the only way. On one chain --- two DeFMI "
+          "deployments, two contract addresses --- there is a choice, and it is "
+          "not the obvious one.\n")
+        w("A single transaction calling both venues gets atomicity from the "
+          "chain for nothing, and the window is zero. But **that transaction is "
+          "the link**. Two transactions with an adaptor keep the two legs "
+          "cryptographically unrelated and pay at least one block. Both cannot "
+          "be had, because being one transaction is what makes it atomic and "
+          "what makes it linkable.\n")
+        w("So the question is what the second arm buys. The prediction, written "
+          "before running it, was: nothing --- the adaptor makes the two "
+          "*claims* unrelated and does nothing about the two *prepares*, which "
+          "name account handles. It is right.\n")
+        w(f"| at {biggest} swaps | one transaction | adaptor |")
+        w("| --- | ---: | ---: |")
+        for row_name, key in (("calls", "calls"),
+                              ("state slots written", "slots_written"),
+                              ("bytes written", "bytes_written")):
+            one_tx = pick("one transaction", biggest, "distinct")[key]
+            adapt = pick("adaptor", biggest, "distinct")[key]
+            w(f"| {row_name} | {one_tx} | {adapt} |")
+        one_tx = pick("one transaction", biggest, "distinct")["verify_ms"]
+        adapt = pick("adaptor", biggest, "distinct")["verify_ms"]
+        w(f"| verification | {ms(one_tx)} ms | {ms(adapt)} ms |")
+        w("| exposure window | none | at least one block |")
+        w("")
+        w("**What a reader of the chain can still join**, using nothing but what "
+          "the calls name --- take a call on one venue, find the calls on the "
+          "other that name the same handles, guess uniformly among them:\n")
+        w("| swaps in flight | between | one transaction | adaptor | chance |")
+        w("| ---: | --- | ---: | ---: | ---: |")
+        for parties in ("distinct", "one pair"):
+            for swaps in sorted({r["swaps"] for r in rows}):
+                a = pick("one transaction", swaps, parties)
+                b = pick("adaptor", swaps, parties)
+                w(f"| {swaps} | {parties} parties | {a['observer_success']:.3f} "
+                  f"| **{b['observer_success']:.3f}** | {b['chance']:.3f} |")
+        w("")
+        w("**Between distinct parties --- which is what a venue with more than "
+          "two users looks like --- the adaptor buys nothing at all.** A prepare "
+          "is a transfer, and a transfer says who is paying whom; joining "
+          "\"Alice pays on one venue\" to \"Alice is paid on the other\" "
+          "needs no cryptanalysis. It costs four times the calls and a third "
+          "more state for a number that does not move.\n")
+        w("It works only where the same pair has several swaps in flight, and "
+          "then it works exactly: the success falls to chance, 1/k. That is the "
+          "honest statement of what this construction protects --- one party's "
+          "own concurrent traffic, and nothing else. It is not a realistic "
+          "anonymity set.\n")
+        w("Two things the table is not. The observer here is given **no "
+          "timing**: every prepare is placed in one block, so a real observer, "
+          "watching them arrive, does better than 1/k. And the rails here are "
+          "account rails. The note ledger of \u00a75 removes the handles that "
+          "are doing the linking, which is what the adaptor needs to be worth "
+          "its cost --- but the Rust side has no note-rail DvP, so that "
+          "combination is argued for and not measured.\n")
+        w("**On one chain, use one transaction.** The adaptor's place is across "
+          "chains, where there is no alternative.\n")
 
     if d.get("parallel"):
         w("## 7. What one settlement node can take\n")

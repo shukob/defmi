@@ -1,5 +1,7 @@
 # defmi
 
+**DeFMI** is a *decentralized financial market infrastructure*. The term of art is borrowed deliberately: an FMI is what the CPMI-IOSCO principles govern --- a payment system, a securities settlement system, a central counterparty --- and the claim here is that this is one, run by no single operator and unable to read what it settles.
+
 Delivery versus payment for committed holdings: two legs that move together or not at all.
 
 ## What it does

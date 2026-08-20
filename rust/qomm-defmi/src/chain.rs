@@ -34,6 +34,35 @@ use sha2::{Digest, Sha256};
 
 pub const STATE_DOMAIN: &[u8] = b"QOMM:CHAIN:STATE:v1";
 
+/// What a transaction of this venue exposes to anyone reading the chain.
+///
+/// Not a model of a chain: this records what the code in this repository
+/// actually names in a call, which is the only thing an observer can join on.
+/// The point of writing it down is that unlinkability is a claim about this
+/// list, and a claim about a list is checkable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Observable {
+    pub block: u64,
+    /// Which deployment. Two DeFMI contracts on one chain are two addresses,
+    /// and an observer reads both.
+    pub venue: String,
+    pub call: Call,
+    /// Account handles the call names. Empty is the interesting case.
+    pub handles: Vec<Vec<u8>>,
+    /// The escrow this call is about, where there is one. An opaque identifier:
+    /// it says *that* two calls concern the same escrow, never which swap.
+    pub leg: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Call {
+    /// Both legs in one call. Atomic because the chain says so.
+    Settle,
+    Prepare,
+    Claim,
+    Unwind,
+}
+
 /// What one settlement asks the chain to store, so it can be metered before it
 /// is applied. Reads and writes are counted separately because chains charge
 /// them differently, usually by a wide margin.
@@ -75,6 +104,10 @@ pub struct ChainState {
     accounts: BTreeMap<Vec<u8>, [u8; 32]>,
     /// nullifier -> the deadline past which it can be dropped
     nullifiers: BTreeMap<[u8; 32], u64>,
+    /// leg -> (payee, the amount being held). Unlike nullifiers this cannot be
+    /// pruned on a deadline: an escrow past its deadline is money someone is
+    /// still owed, so it stays until it is claimed or taken back.
+    escrows: BTreeMap<Vec<u8>, (Vec<u8>, [u8; 32])>,
 }
 
 impl ChainState {
@@ -138,6 +171,42 @@ impl ChainState {
     /// This is what keeps the state bounded by activity rather than by history.
     /// Safe because an expired instruction is refused on its deadline, so the
     /// entry stops carrying information the moment it could be removed.
+    /// Escrow one side of a cross-venue exchange.
+    ///
+    /// The chain's half of `Ledger::prepare_transfer`: the payer's balance is
+    /// replaced and the amount is parked under the leg's name. Two slots, one
+    /// of which did not exist before --- which is the whole extra cost of doing
+    /// this in two transactions instead of one.
+    pub fn prepare(
+        &mut self, leg: &[u8], payer: &[u8], payee: &[u8],
+        remainder: RistrettoPoint, held: RistrettoPoint,
+    ) -> Result<Delta, Rejected> {
+        if !self.accounts.contains_key(payer) || !self.accounts.contains_key(payee) {
+            return Err(Rejected::UnknownAccount);
+        }
+        if self.escrows.contains_key(leg) {
+            return Err(Rejected::NullifierSeen);
+        }
+        self.accounts.insert(payer.to_vec(), remainder.compress().to_bytes());
+        self.escrows.insert(leg.to_vec(),
+                            (payee.to_vec(), held.compress().to_bytes()));
+        Ok(Delta { slots_read: 2, slots_written: 2, bytes_written: 64,
+                   nullifiers_added: 0 })
+    }
+
+    /// Release an escrow to its payee. The signature check is the verifier's;
+    /// this is the state it leaves behind.
+    pub fn claim(&mut self, leg: &[u8], credited: RistrettoPoint)
+        -> Result<Delta, Rejected> {
+        let (payee, _) = self.escrows.get(leg).ok_or(Rejected::UnknownAccount)?.clone();
+        self.accounts.insert(payee, credited.compress().to_bytes());
+        self.escrows.remove(leg);
+        Ok(Delta { slots_read: 2, slots_written: 2, bytes_written: 32,
+                   nullifiers_added: 0 })
+    }
+
+    pub fn escrows(&self) -> usize { self.escrows.len() }
+
     pub fn prune(&mut self, now: u64) -> usize {
         let before = self.nullifiers.len();
         self.nullifiers.retain(|_, deadline| *deadline >= now);
@@ -164,6 +233,14 @@ impl ChainState {
             hasher.update(nullifier);
             hasher.update(deadline.to_be_bytes());
         }
+        hasher.update((self.escrows.len() as u64).to_be_bytes());
+        for (leg, (payee, held)) in &self.escrows {
+            hasher.update((leg.len() as u64).to_be_bytes());
+            hasher.update(leg);
+            hasher.update((payee.len() as u64).to_be_bytes());
+            hasher.update(payee);
+            hasher.update(held);
+        }
         hasher.finalize().into()
     }
 
@@ -179,5 +256,6 @@ impl ChainState {
     pub fn stored_bytes(&self) -> usize {
         self.accounts.iter().map(|(h, _)| h.len() + 32).sum::<usize>()
             + self.nullifiers.len() * (32 + 8)
+            + self.escrows.iter().map(|(l, (p, _))| l.len() + p.len() + 32).sum::<usize>()
     }
 }

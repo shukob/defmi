@@ -1,0 +1,30 @@
+{
+  "host": "host-c",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "rail_bits": 32,
+  "amount": 1000,
+  "repeats": 9,
+  "observer": "joins two calls that name the same handles; guesses uniformly among the candidates",
+  "rows": [
+    {"arm": "one transaction", "swaps": 1, "parties": "distinct", "calls": 1, "slots_written": 6, "bytes_written": 208, "verify_ms": {"n": 9, "mean": 25.3176, "sd": 1.2059, "median": 24.7483}, "observer_success": 1.0000, "chance": 1.0000},
+    {"arm": "adaptor", "swaps": 1, "parties": "distinct", "calls": 4, "slots_written": 8, "bytes_written": 192, "verify_ms": {"n": 9, "mean": 25.8824, "sd": 1.3938, "median": 25.4572}, "observer_success": 1.0000, "chance": 1.0000},
+    {"arm": "one transaction", "swaps": 2, "parties": "distinct", "calls": 2, "slots_written": 12, "bytes_written": 416, "verify_ms": {"n": 9, "mean": 50.4092, "sd": 1.8030, "median": 49.6054}, "observer_success": 1.0000, "chance": 0.5000},
+    {"arm": "adaptor", "swaps": 2, "parties": "distinct", "calls": 8, "slots_written": 16, "bytes_written": 384, "verify_ms": {"n": 9, "mean": 52.6905, "sd": 3.6868, "median": 50.9163}, "observer_success": 1.0000, "chance": 0.5000},
+    {"arm": "one transaction", "swaps": 4, "parties": "distinct", "calls": 4, "slots_written": 24, "bytes_written": 832, "verify_ms": {"n": 9, "mean": 105.8097, "sd": 7.0361, "median": 102.6038}, "observer_success": 1.0000, "chance": 0.2500},
+    {"arm": "adaptor", "swaps": 4, "parties": "distinct", "calls": 16, "slots_written": 32, "bytes_written": 768, "verify_ms": {"n": 9, "mean": 105.5503, "sd": 4.6518, "median": 103.9953}, "observer_success": 1.0000, "chance": 0.2500},
+    {"arm": "one transaction", "swaps": 8, "parties": "distinct", "calls": 8, "slots_written": 48, "bytes_written": 1664, "verify_ms": {"n": 9, "mean": 210.5945, "sd": 8.1674, "median": 207.5058}, "observer_success": 1.0000, "chance": 0.1250},
+    {"arm": "adaptor", "swaps": 8, "parties": "distinct", "calls": 32, "slots_written": 64, "bytes_written": 1536, "verify_ms": {"n": 9, "mean": 203.1428, "sd": 2.3817, "median": 202.7149}, "observer_success": 1.0000, "chance": 0.1250},
+    {"arm": "one transaction", "swaps": 16, "parties": "distinct", "calls": 16, "slots_written": 96, "bytes_written": 3328, "verify_ms": {"n": 9, "mean": 413.1850, "sd": 9.1854, "median": 411.2708}, "observer_success": 1.0000, "chance": 0.0625},
+    {"arm": "adaptor", "swaps": 16, "parties": "distinct", "calls": 64, "slots_written": 128, "bytes_written": 3072, "verify_ms": {"n": 9, "mean": 413.2748, "sd": 19.5739, "median": 415.3213}, "observer_success": 1.0000, "chance": 0.0625},
+    {"arm": "one transaction", "swaps": 1, "parties": "one pair", "calls": 1, "slots_written": 6, "bytes_written": 208, "verify_ms": {"n": 9, "mean": 22.9758, "sd": 0.7893, "median": 22.7889}, "observer_success": 1.0000, "chance": 1.0000},
+    {"arm": "adaptor", "swaps": 1, "parties": "one pair", "calls": 4, "slots_written": 8, "bytes_written": 192, "verify_ms": {"n": 9, "mean": 23.2727, "sd": 0.1206, "median": 23.2806}, "observer_success": 1.0000, "chance": 1.0000},
+    {"arm": "one transaction", "swaps": 2, "parties": "one pair", "calls": 2, "slots_written": 12, "bytes_written": 416, "verify_ms": {"n": 9, "mean": 46.3843, "sd": 1.1492, "median": 46.1033}, "observer_success": 1.0000, "chance": 0.5000},
+    {"arm": "adaptor", "swaps": 2, "parties": "one pair", "calls": 8, "slots_written": 16, "bytes_written": 384, "verify_ms": {"n": 9, "mean": 50.6885, "sd": 3.8605, "median": 49.8956}, "observer_success": 0.5000, "chance": 0.5000},
+    {"arm": "one transaction", "swaps": 4, "parties": "one pair", "calls": 4, "slots_written": 24, "bytes_written": 832, "verify_ms": {"n": 9, "mean": 160.3334, "sd": 68.6355, "median": 128.8078}, "observer_success": 1.0000, "chance": 0.2500},
+    {"arm": "adaptor", "swaps": 4, "parties": "one pair", "calls": 16, "slots_written": 32, "bytes_written": 768, "verify_ms": {"n": 9, "mean": 224.2141, "sd": 32.5979, "median": 214.7632}, "observer_success": 0.2500, "chance": 0.2500},
+    {"arm": "one transaction", "swaps": 8, "parties": "one pair", "calls": 8, "slots_written": 48, "bytes_written": 1664, "verify_ms": {"n": 9, "mean": 394.3962, "sd": 14.4774, "median": 394.9765}, "observer_success": 1.0000, "chance": 0.1250},
+    {"arm": "adaptor", "swaps": 8, "parties": "one pair", "calls": 32, "slots_written": 64, "bytes_written": 1536, "verify_ms": {"n": 9, "mean": 412.2584, "sd": 55.7884, "median": 395.5606}, "observer_success": 0.1250, "chance": 0.1250},
+    {"arm": "one transaction", "swaps": 16, "parties": "one pair", "calls": 16, "slots_written": 96, "bytes_written": 3328, "verify_ms": {"n": 9, "mean": 785.6781, "sd": 28.3836, "median": 784.0700}, "observer_success": 1.0000, "chance": 0.0625},
+    {"arm": "adaptor", "swaps": 16, "parties": "one pair", "calls": 64, "slots_written": 128, "bytes_written": 3072, "verify_ms": {"n": 9, "mean": 800.4278, "sd": 35.2403, "median": 800.3021}, "observer_success": 0.0625, "chance": 0.0625}
+  ]
+}

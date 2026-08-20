@@ -200,6 +200,45 @@ Bob draws the secret and moves first, so Bob is never at risk: if he stops after
 
 Preparing costs about what a transfer costs, because that is what it is: the same check, with the amount moved into an escrow instead of into the payee. Unwinding costs nothing, and deliberately requires no signature --- the deadline is the whole authority, because demanding a signature would strand the money of anyone who lost a key, which is the failure this branch exists to prevent.
 
+### 6.1 On one chain, the same construction is a mistake
+
+Across two chains there is no choice: nothing spans them, so the adaptor and its window are the only way. On one chain --- two DeFMI deployments, two contract addresses --- there is a choice, and it is not the obvious one.
+
+A single transaction calling both venues gets atomicity from the chain for nothing, and the window is zero. But **that transaction is the link**. Two transactions with an adaptor keep the two legs cryptographically unrelated and pay at least one block. Both cannot be had, because being one transaction is what makes it atomic and what makes it linkable.
+
+So the question is what the second arm buys. The prediction, written before running it, was: nothing --- the adaptor makes the two *claims* unrelated and does nothing about the two *prepares*, which name account handles. It is right.
+
+| at 16 swaps | one transaction | adaptor |
+| --- | ---: | ---: |
+| calls | 16 | 64 |
+| state slots written | 96 | 128 |
+| bytes written | 3328 | 3072 |
+| verification | 413.2 ± 9.2 (n=9) ms | 413.3 ± 19.6 (n=9) ms |
+| exposure window | none | at least one block |
+
+**What a reader of the chain can still join**, using nothing but what the calls name --- take a call on one venue, find the calls on the other that name the same handles, guess uniformly among them:
+
+| swaps in flight | between | one transaction | adaptor | chance |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | distinct parties | 1.000 | **1.000** | 1.000 |
+| 2 | distinct parties | 1.000 | **1.000** | 0.500 |
+| 4 | distinct parties | 1.000 | **1.000** | 0.250 |
+| 8 | distinct parties | 1.000 | **1.000** | 0.125 |
+| 16 | distinct parties | 1.000 | **1.000** | 0.062 |
+| 1 | one pair parties | 1.000 | **1.000** | 1.000 |
+| 2 | one pair parties | 1.000 | **0.500** | 0.500 |
+| 4 | one pair parties | 1.000 | **0.250** | 0.250 |
+| 8 | one pair parties | 1.000 | **0.125** | 0.125 |
+| 16 | one pair parties | 1.000 | **0.062** | 0.062 |
+
+**Between distinct parties --- which is what a venue with more than two users looks like --- the adaptor buys nothing at all.** A prepare is a transfer, and a transfer says who is paying whom; joining "Alice pays on one venue" to "Alice is paid on the other" needs no cryptanalysis. It costs four times the calls and a third more state for a number that does not move.
+
+It works only where the same pair has several swaps in flight, and then it works exactly: the success falls to chance, 1/k. That is the honest statement of what this construction protects --- one party's own concurrent traffic, and nothing else. It is not a realistic anonymity set.
+
+Two things the table is not. The observer here is given **no timing**: every prepare is placed in one block, so a real observer, watching them arrive, does better than 1/k. And the rails here are account rails. The note ledger of §5 removes the handles that are doing the linking, which is what the adaptor needs to be worth its cost --- but the Rust side has no note-rail DvP, so that combination is argued for and not measured.
+
+**On one chain, use one transaction.** The adaptor's place is across chains, where there is no alternative.
+
 ## 7. What one settlement node can take
 
 Verification only --- proving is the counterparty's work and the clock is stopped for it. Every worker meets at a barrier before the measured section begins.

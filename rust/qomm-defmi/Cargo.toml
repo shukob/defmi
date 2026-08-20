@@ -40,3 +40,7 @@ harness = false
 [[bench]]
 name = "pvp"
 harness = false
+
+[[bench]]
+name = "same_chain"
+harness = false
