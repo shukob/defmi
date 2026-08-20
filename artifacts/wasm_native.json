@@ -1,0 +1,9 @@
+{
+  "target": "native",
+  "repeats": 15,
+  "calibration": {"scalar_mult_us": 35.4042},
+  "scaling": [
+    {"bits": 32, "build_ms": 9.9815, "settle_ms": 4.5520, "state_ms": 0.0159, "bytes_written": 168, "state_bytes_held": 768, "per_second": 218.92},
+    {"bits": 64, "build_ms": 18.7141, "settle_ms": 7.2733, "state_ms": 0.0166, "bytes_written": 168, "state_bytes_held": 768, "per_second": 137.17}
+  ]
+}
