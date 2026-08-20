@@ -218,7 +218,7 @@ What the second arm costs is small and flat:
 | verification | 282.2 ± 0.2 (n=5) ms | 291.8 ± 0.3 (n=5) ms |
 | exposure window | none | at least one block |
 
-Four times the calls and a third more state slots --- holding **fewer bytes** in them, because an escrow entry is smaller than the account update it stands in for --- for **3.4% more verification** (+3.0% to +3.8% across the table). The range proofs dominate, and the escrow and the signature are a few percent beside them rather than nothing at all: this is a difference the earlier run on a loaded machine could not resolve, where both arms read 413 ms with a spread ten times the gap.
+Four times the calls and a third more state slots --- holding **fewer bytes** in them, because a settlement records a nullifier and a deadline (40 bytes a venue) where the escrow path records neither: the escrow key is itself the replay guard, and it costs a slot rather than bytes --- for **3.4% more verification** (+3.0% to +3.8% across the table). The range proofs dominate, and the escrow and the signature are a few percent beside them rather than nothing at all: this is a difference the earlier run on a loaded machine could not resolve: both arms read 413 ms there, with standard deviations of 9 and 20 ms against a gap that should have been about 14. It was not measured to be zero; it was not measurable.
 
 What it buys is the question, and the answer turned out to depend on something that was not cryptography at all.
 

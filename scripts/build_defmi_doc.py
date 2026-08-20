@@ -467,14 +467,18 @@ def main() -> int:
         lo, hi = min(adapt_over_one), max(adapt_over_one)
         mid = sorted(adapt_over_one)[len(adapt_over_one) // 2]
         w(f"Four times the calls and a third more state slots --- holding "
-          f"**fewer bytes** in them, because an escrow entry is smaller than the "
-          f"account update it stands in for --- for "
+          f"**fewer bytes** in them, because a settlement records a nullifier "
+          f"and a deadline (40 bytes a venue) where the escrow path records "
+          f"neither: the escrow key is itself the replay guard, and it costs a "
+          f"slot rather than bytes --- for "
           f"**{100 * (mid - 1):.1f}% more verification** "
           f"(+{100 * (lo - 1):.1f}% to +{100 * (hi - 1):.1f}% across the "
           "table). The range proofs dominate, and the escrow and the signature "
           "are a few percent beside them rather than nothing at all: this is a "
-          "difference the earlier run on a loaded machine could not resolve, "
-          "where both arms read 413 ms with a spread ten times the gap.\n")
+          "difference the earlier run on a loaded machine could not resolve: "
+          "both arms read 413 ms there, with standard deviations of 9 and "
+          "20 ms against a gap that should have been about 14. It was not "
+          "measured to be zero; it was not measurable.\n")
         w("What it buys is the question, and the answer turned out to depend on "
           "something that was not cryptography at all.\n")
         w("**What a reader of the chain can still join**, using nothing but what "
