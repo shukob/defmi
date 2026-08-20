@@ -6,4 +6,5 @@ pub mod ledger;
 pub mod netting;
 pub mod note_settlement;
 pub mod notes;
+pub mod pvp;
 pub mod settlement;

@@ -46,6 +46,8 @@ def main() -> int:
     rust = json.loads(rust_path.read_text()) if rust_path.exists() else None
     big_path = ART / "defmi_host_a.json"
     big = json.loads(big_path.read_text()) if big_path.exists() else None
+    pvp_path = ART / "pvp.json"
+    pvp = json.loads(pvp_path.read_text()) if pvp_path.exists() else None
 
     out: list[str] = []
     w = out.append
@@ -358,8 +360,66 @@ def main() -> int:
               "difference is only the ring proof, the serial proof and one "
               "equality proof.\n")
 
+    if pvp:
+        milli, micro = pvp["milliseconds"], pvp["microseconds"]
+        w("## 6. Payment versus payment, across two ledgers\n")
+        w("DvP moves two legs together because both are on one ledger and one "
+          "function decides. Two ledgers that share no state have no such "
+          "function, and fair exchange between two parties with no third party "
+          "is impossible in general --- so something has to pass from one side "
+          "to the other. The only question is what, and who can read it.\n")
+        w("A hash lock passes a preimage that ends up in the clear on both "
+          "ledgers, so anyone reading both can join the two legs on it. That is "
+          "the linkage the asset tag and the note ledger were built to prevent, "
+          "handed back at the last step. What is used instead is an **adaptor "
+          "signature**: the first mover's claim on one ledger hands the second "
+          "mover a scalar, and what each ledger records is an ordinary "
+          "signature with nothing in common with the other's.\n")
+        w("```")
+        w("1. Bob   -> Alice : Y = g^y")
+        w("2. Alice           prepares leg A; her money leaves her account")
+        w("   Alice -> Bob   : a pre-signature over \"leg A\", adapted to Y")
+        w("3. Bob             prepares leg B, and sends his own pre-signature")
+        w("4. Bob             claims on A  -> he is paid, and y becomes readable")
+        w("5. Alice           reads A, recovers y, claims on B  -> she is paid")
+        w("```\n")
+        w("Bob draws the secret and moves first, so Bob is never at risk: if he "
+          "stops after step 3 both escrows expire and both parties are whole. "
+          "Alice is exposed in exactly one window, between step 4 and step 5, "
+          "and she is safe if and only if the gap between the two deadlines "
+          "covers her reaction. **That gap is this arrangement's Herstatt "
+          "risk**, and it is the number worth measuring.\n")
+        w(f"| | measured, {pvp['rail_bits']}-bit rails |")
+        w("| --- | ---: |")
+        w(f"| prepare one leg (check, and move it out of reach) "
+          f"| {milli['prepare']['mean']:.2f} \u00b1 {milli['prepare']['sd']:.2f} ms "
+          f"(n={milli['prepare']['n']}) |")
+        w(f"| the first mover's claim | {milli['claim']['mean']:.2f} \u00b1 "
+          f"{milli['claim']['sd']:.2f} ms (n={milli['claim']['n']}) |")
+        w(f"| **the second mover's reaction** | **{milli['react']['mean']:.2f} "
+          f"\u00b1 {milli['react']['sd']:.2f} ms (n={milli['react']['n']})** |")
+        w(f"| unwind an expired leg | {micro['unwind']['mean']:.2f} \u00b1 "
+          f"{micro['unwind']['sd']:.2f} us (n={micro['unwind']['n']}) |")
+        w("")
+        w(f"**The cryptography is not what puts the money at risk.** Recovering "
+          f"the secret, adapting the signature and having the second ledger "
+          f"accept it comes to {milli['react']['mean']:.2f} ms. The deadline gap "
+          "has to cover that *plus* the time for one ledger to publish the "
+          "first claim and the other to accept the second --- block times and "
+          "network round trips, which are three to five orders of magnitude "
+          "larger. So the exposure is set by the settlement finality of the two "
+          "ledgers and not by anything in this repository, and a deployment "
+          "that wants a short window should shop for finality rather than for "
+          "faster proofs.\n")
+        w("Preparing costs about what a transfer costs, because that is what it "
+          "is: the same check, with the amount moved into an escrow instead of "
+          "into the payee. Unwinding costs nothing, and deliberately requires "
+          "no signature --- the deadline is the whole authority, because "
+          "demanding a signature would strand the money of anyone who lost a "
+          "key, which is the failure this branch exists to prevent.\n")
+
     if d.get("parallel"):
-        w("## 6. What one settlement node can take\n")
+        w("## 7. What one settlement node can take\n")
         w("Verification only --- proving is the counterparty's work and the clock "
           "is stopped for it. Every worker meets at a barrier before the "
           "measured section begins.\n")
@@ -403,7 +463,7 @@ def main() -> int:
               "is what was expected.\n")
 
     if rust:
-        w("## 7. The Rust port\n")
+        w("## 8. The Rust port\n")
         py_cal = value(d.get("calibration", {}).get("scalar_mult_us"))
         rs_cal = value(rust["calibration"].get("scalar_mult_us"))
         w(f"Measured on the same machine (`{label(rust['host'])}` / "
@@ -458,7 +518,7 @@ def main() -> int:
           "The conclusion here is that the table above is still a large enough "
           "difference to swallow that.\n")
 
-    w("## 8. What is still missing\n")
+    w("## 9. What is still missing\n")
     w("- The cash rail carries no tag, because hiding *which cash* means nothing "
       "with a single settlement currency. Making it multi-currency is the same "
       "construction applied once more, but it is neither built nor measured.")

@@ -26,3 +26,4 @@ frost-core = "3.0"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 qomm-zk = { git = "https://github.com/shukob/zkpi" }
 qomm-zkpi = { git = "https://github.com/shukob/zkpi" }
+qomm-measure = { git = "https://github.com/shukob/zkpi" }

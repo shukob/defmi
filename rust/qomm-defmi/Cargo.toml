@@ -28,10 +28,15 @@ rand_core.workspace = true
 
 [dev-dependencies]
 rand = "0.8"
+qomm-measure = { git = "https://github.com/shukob/zkpi" }
 merlin.workspace = true
 ed25519-dalek.workspace = true
 bulletproofs.workspace = true
 
 [[bench]]
 name = "settle"
+harness = false
+
+[[bench]]
+name = "pvp"
 harness = false

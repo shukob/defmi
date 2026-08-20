@@ -172,7 +172,35 @@ Both rails were made note rails and the settlement itself was run through them. 
 The account version settles in 48.8 ± 2.0 (n=15) ms at 40 bits. Hiding the counterparties costs +82% at ring 2 and +72% at ring 64.
 **Adding up the parts was off by more than a factor of two.** A note leg and an account leg both carry two range proofs; the difference is only the ring proof, the serial proof and one equality proof.
 
-## 6. What one settlement node can take
+## 6. Payment versus payment, across two ledgers
+
+DvP moves two legs together because both are on one ledger and one function decides. Two ledgers that share no state have no such function, and fair exchange between two parties with no third party is impossible in general --- so something has to pass from one side to the other. The only question is what, and who can read it.
+
+A hash lock passes a preimage that ends up in the clear on both ledgers, so anyone reading both can join the two legs on it. That is the linkage the asset tag and the note ledger were built to prevent, handed back at the last step. What is used instead is an **adaptor signature**: the first mover's claim on one ledger hands the second mover a scalar, and what each ledger records is an ordinary signature with nothing in common with the other's.
+
+```
+1. Bob   -> Alice : Y = g^y
+2. Alice           prepares leg A; her money leaves her account
+   Alice -> Bob   : a pre-signature over "leg A", adapted to Y
+3. Bob             prepares leg B, and sends his own pre-signature
+4. Bob             claims on A  -> he is paid, and y becomes readable
+5. Alice           reads A, recovers y, claims on B  -> she is paid
+```
+
+Bob draws the secret and moves first, so Bob is never at risk: if he stops after step 3 both escrows expire and both parties are whole. Alice is exposed in exactly one window, between step 4 and step 5, and she is safe if and only if the gap between the two deadlines covers her reaction. **That gap is this arrangement's Herstatt risk**, and it is the number worth measuring.
+
+| | measured, 32-bit rails |
+| --- | ---: |
+| prepare one leg (check, and move it out of reach) | 2.39 ± 0.21 ms (n=50) |
+| the first mover's claim | 0.09 ± 0.01 ms (n=50) |
+| **the second mover's reaction** | **0.10 ± 0.00 ms (n=50)** |
+| unwind an expired leg | 1.43 ± 0.33 us (n=50) |
+
+**The cryptography is not what puts the money at risk.** Recovering the secret, adapting the signature and having the second ledger accept it comes to 0.10 ms. The deadline gap has to cover that *plus* the time for one ledger to publish the first claim and the other to accept the second --- block times and network round trips, which are three to five orders of magnitude larger. So the exposure is set by the settlement finality of the two ledgers and not by anything in this repository, and a deployment that wants a short window should shop for finality rather than for faster proofs.
+
+Preparing costs about what a transfer costs, because that is what it is: the same check, with the amount moved into an escrow instead of into the payee. Unwinding costs nothing, and deliberately requires no signature --- the deadline is the whole authority, because demanding a signature would strand the money of anyone who lost a key, which is the failure this branch exists to prevent.
+
+## 7. What one settlement node can take
 
 Verification only --- proving is the counterparty's work and the clock is stopped for it. Every worker meets at a barrier before the measured section begins.
 
@@ -199,7 +227,7 @@ A second host with more cores (`host-a`, 64 logical cores) was measured too. Its
 
 **689 per second** on 64 workers, only 6% short of linear. Nothing is shared between verifications, so this shape is what was expected.
 
-## 7. The Rust port
+## 8. The Rust port
 
 Measured on the same machine (`host-c` / rustc 1.97.1 (8bab26f4f 2026-07-14) / group ristretto255). The scalar-multiplication calibration is 37.4 us in Rust against 37.3 us in Python, and **this one figure is the only thing that compares across the two languages** --- Python goes through libsodium and Rust through dalek, different implementations of the same thing: a scalar multiplication on a native-code 255-bit curve. That they agree says the two are equally fast and, more usefully, that **the machine was in the same state**, which is what stops the ratios below being explained by the machine.
 
@@ -217,7 +245,7 @@ Per core that is 20.5 to 135.8 settlements per second. Parallelism is independen
 
 **Losing the fine grain of the width is a real cost.** A bit decomposition could prove 24 or 40 bits directly, which is what made the per-rail width optimisation of section 2.1 work. With only powers of two, securities at 24 bits round up to 32 and cash at 40 to 64. The conclusion here is that the table above is still a large enough difference to swallow that.
 
-## 8. What is still missing
+## 9. What is still missing
 
 - The cash rail carries no tag, because hiding *which cash* means nothing with a single settlement currency. Making it multi-currency is the same construction applied once more, but it is neither built nor measured.
 - Whoever sent a note can tell that it was spent, because they know the `g^S` they built. That is unavoidable in this construction. To a third party the ring size is the limit of what is learned.

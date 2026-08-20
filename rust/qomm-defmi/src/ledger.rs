@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 use crate::assets::BlindedTag;
+use qomm_zk::adaptor::{self, Signature};
 
 pub struct Transfer {
     pub amount_commitment: RistrettoPoint,
@@ -40,11 +41,31 @@ pub struct TransferSecrets {
     pub remainder_blinding: Scalar,
 }
 
+/// A transfer that has been checked and whose funds have left the payer, but
+/// which has not reached the payee yet.
+///
+/// This is what makes a settlement across two ledgers possible at all. Neither
+/// ledger can see the other, so neither can decide alone whether the pair went
+/// through; what each *can* do is take the money out of reach and wait. The
+/// amount stays on the ledger's books the whole time --- it is in neither
+/// account, so conservation has to count it explicitly, which is the one place
+/// this could silently create or destroy value.
+pub struct Pending {
+    pub payer: Vec<u8>,
+    pub payee: Vec<u8>,
+    pub amount_commitment: RistrettoPoint,
+    /// Past this, the payer may take it back. A ledger does not read a clock;
+    /// the caller supplies the time it is judging against, so the same code
+    /// runs against a block height, a slot number or a wall clock.
+    pub deadline: u64,
+}
+
 pub struct Ledger {
     pub key: Pedersen,
     pub bits: usize,
     bp_gens: BulletproofGens,
     accounts: BTreeMap<Vec<u8>, RistrettoPoint>,
+    pending: BTreeMap<Vec<u8>, Pending>,
     minted: RistrettoPoint,
 }
 
@@ -54,6 +75,7 @@ impl Ledger {
             key, bits,
             bp_gens: BulletproofGens::new(bits, 1),
             accounts: BTreeMap::new(),
+            pending: BTreeMap::new(),
             minted: RistrettoPoint::identity(),
         }
     }
@@ -71,8 +93,85 @@ impl Ledger {
     pub fn handles(&self) -> Vec<Vec<u8>> { self.accounts.keys().cloned().collect() }
 
     /// No proof and no opening: the two products simply have to agree.
+    ///
+    /// Money held in escrow is in no account and is still on the books, so it
+    /// is counted here. Leaving it out would make every prepared leg look like
+    /// value destroyed and every commit like value created.
     pub fn conserved(&self) -> bool {
-        self.accounts.values().sum::<RistrettoPoint>() == self.minted
+        let held: RistrettoPoint = self.pending.values()
+            .map(|p| p.amount_commitment).sum();
+        self.accounts.values().sum::<RistrettoPoint>() + held == self.minted
+    }
+
+    pub fn pending(&self, leg: &[u8]) -> Option<&Pending> { self.pending.get(leg) }
+
+    pub fn pending_legs(&self) -> Vec<Vec<u8>> { self.pending.keys().cloned().collect() }
+
+    /// Check a transfer and take the amount out of the payer's reach, without
+    /// giving it to the payee.
+    ///
+    /// `leg` names the escrow. It is the caller's identifier and it is what the
+    /// signature that later releases the money is made over, so it has to be
+    /// unique on this ledger --- a reused name is a second claim on the first
+    /// escrow, which is refused here rather than left to the caller.
+    pub fn prepare_transfer(
+        &mut self, leg: &[u8], payer: &[u8], payee: &[u8], transfer: &Transfer,
+        context: &[u8], amount_bounded: bool, deadline: u64,
+    ) -> Result<(), &'static str> {
+        if self.pending.contains_key(leg) {
+            return Err("that leg is already prepared");
+        }
+        if !self.accounts.contains_key(payee) {
+            return Err("unknown payee handle");
+        }
+        self.check_transfer(payer, transfer, context, amount_bounded)?;
+        self.accounts.insert(payer.to_vec(), transfer.remainder_commitment);
+        self.pending.insert(leg.to_vec(), Pending {
+            payer: payer.to_vec(),
+            payee: payee.to_vec(),
+            amount_commitment: transfer.amount_commitment,
+            deadline,
+        });
+        Ok(())
+    }
+
+    /// Release an escrow to its payee.
+    ///
+    /// The ledger checks an ordinary signature over the leg's name under the
+    /// payer's key. It knows nothing about adaptors or about the other ledger;
+    /// what makes the pair atomic happens outside, and this stays a signature
+    /// check so that it can.
+    pub fn commit_pending(
+        &mut self, leg: &[u8], payer_key: &RistrettoPoint,
+        release: &Signature, now: u64,
+    ) -> Result<(), &'static str> {
+        let held = self.pending.get(leg).ok_or("no such prepared leg")?;
+        if now > held.deadline {
+            return Err("the escrow has expired");
+        }
+        if !adaptor::verify(payer_key, leg, release) {
+            return Err("the release is not signed for this leg");
+        }
+        let held = self.pending.remove(leg).expect("just looked it up");
+        let credited = self.accounts[&held.payee] + held.amount_commitment;
+        self.accounts.insert(held.payee, credited);
+        Ok(())
+    }
+
+    /// Give an expired escrow back to its payer.
+    ///
+    /// No signature: the payer already owned this money and the deadline is the
+    /// whole authority. Requiring one would strand funds whenever the payer
+    /// lost a key, which is the failure this branch exists to prevent.
+    pub fn unwind_pending(&mut self, leg: &[u8], now: u64) -> Result<(), &'static str> {
+        let held = self.pending.get(leg).ok_or("no such prepared leg")?;
+        if now <= held.deadline {
+            return Err("the escrow has not expired");
+        }
+        let held = self.pending.remove(leg).expect("just looked it up");
+        let restored = self.accounts[&held.payer] + held.amount_commitment;
+        self.accounts.insert(held.payer, restored);
+        Ok(())
     }
 
     fn gens(&self, tag: Option<&BlindedTag>) -> bulletproofs::PedersenGens {
