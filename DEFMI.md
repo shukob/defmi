@@ -205,12 +205,12 @@ The benchmark above found something that is not about rings. Its verification ti
 
 | notes held | root by walking | root as kept | |
 | ---: | ---: | ---: | ---: |
-| 64 | 272.8 ± 3.9 (n=9) us | 0.12 ± 0.03 (n=9) us | 2,204x |
-| 256 | 1068.2 ± 10.0 (n=9) us | 0.12 ± 0.01 (n=9) us | 8,699x |
-| 1,024 | 4338.5 ± 63.4 (n=9) us | 0.14 ± 0.04 (n=9) us | 31,737x |
-| 4,096 | 17012.4 ± 48.1 (n=9) us | 0.19 ± 0.03 (n=9) us | 90,060x |
+| 64 | 238.4 ± 2.4 (n=9) us | 0.19 ± 0.11 (n=9) us | 1,263x |
+| 256 | 949.3 ± 2.3 (n=9) us | 0.21 ± 0.17 (n=9) us | 4,480x |
+| 1,024 | 3800.0 ± 5.0 (n=9) us | 0.13 ± 0.03 (n=9) us | 28,788x |
+| 4,096 | 15187.3 ± 16.0 (n=9) us | 0.16 ± 0.01 (n=9) us | 95,278x |
 
-At 4,096 notes the four roots in one settlement came to **68.0 ms**, against about 8 ms of cryptography --- the bookkeeping had become an order of magnitude more expensive than the proofs, and it would keep growing, because it was a function of total history rather than of activity. That is the exact property §7 checks for the account rail and it had gone unchecked here.
+At 4,096 notes the four roots in one settlement came to **60.7 ms**, against about 8 ms of cryptography --- the bookkeeping had become an order of magnitude more expensive than the proofs, and it would keep growing, because it was a function of total history rather than of activity. That is the exact property §7 checks for the account rail and it had gone unchecked here.
 
 Nothing about the ledger required it. Notes are only ever appended --- a spent note stays in the pool, because removing it would say which one went --- and serials are only ever inserted, so the hash of the whole history is a running hash extended once per change. The sort was buying order-independence for a sequence that already has an order: the one the chain applied. The root is now kept rather than recomputed and the column above is flat.
 
