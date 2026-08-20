@@ -487,12 +487,12 @@ dependencies = [
 [[package]]
 name = "qomm-measure"
 version = "0.1.0"
-source = "git+https://github.com/shukob/zkpi#209f21ed09240e83a9b3b1dec0b1f21ddb4ec30f"
+source = "git+https://github.com/shukob/zkpi#cc3ad72e713ca1dc5848044b4b07d7574343b7c6"
 
 [[package]]
 name = "qomm-zk"
 version = "0.1.0"
-source = "git+https://github.com/shukob/zkpi#209f21ed09240e83a9b3b1dec0b1f21ddb4ec30f"
+source = "git+https://github.com/shukob/zkpi#cc3ad72e713ca1dc5848044b4b07d7574343b7c6"
 dependencies = [
  "bulletproofs",
  "curve25519-dalek",
@@ -505,7 +505,7 @@ dependencies = [
 [[package]]
 name = "qomm-zkpi"
 version = "0.1.0"
-source = "git+https://github.com/shukob/zkpi#209f21ed09240e83a9b3b1dec0b1f21ddb4ec30f"
+source = "git+https://github.com/shukob/zkpi#cc3ad72e713ca1dc5848044b4b07d7574343b7c6"
 dependencies = [
  "bulletproofs",
  "curve25519-dalek",
