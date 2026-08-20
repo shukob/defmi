@@ -1,0 +1,64 @@
+{
+  "artifacts": {
+    "defmi.json": {
+      "bytes": 54319,
+      "host": "host-c",
+      "python": "3.13.5",
+      "sha256": "fefb6bf3b01b3f8b15d4d9b98e418598adbb1d3ff221d0a8cd90759e42914093"
+    },
+    "defmi_host_a.json": {
+      "bytes": 16513,
+      "host": "host-a",
+      "python": "3.12.3",
+      "sha256": "9dd650db6b30940f40b2f1a672be506694c19464c1bfbc3ffefe358d92d3f063"
+    },
+    "evm_gas.json": {
+      "bytes": 238,
+      "sha256": "18f19d269de23ea3a86b6376ad31a165bf12e27ee39b924e0227b431cd4e4c9a"
+    },
+    "evm_settlement.json": {
+      "bytes": 1451,
+      "host": "host-c",
+      "sha256": "9edc1c5e94141da9ecabe83322dfc96b9d02aca4cad471890cb44a5101b5c0aa"
+    },
+    "pvp.json": {
+      "bytes": 918,
+      "host": "host-a",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "sha256": "ea3548fad8e4daa60cac24b5d0c65b44825e9e2c7314729e9a329e71bbe9c276"
+    },
+    "rings.json": {
+      "bytes": 5624,
+      "host": "host-a",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "sha256": "19c50256719ff47430621b65fd548817a638b4ff74d6f90e1de60bf88b32cce7"
+    },
+    "rust_bench.json": {
+      "bytes": 750,
+      "host": "host-c",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "sha256": "caeba2de92e177a75bfccd3de004af3f51566907eb44db36104dfdf5485995c4"
+    },
+    "same_chain.json": {
+      "bytes": 11090,
+      "host": "host-a",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "sha256": "e0c6a0fcddf816659fbaa1903b391d375bc4f0be87dc9530e8a4f26e41eaf70c"
+    },
+    "wasm_native.json": {
+      "bytes": 465,
+      "host": "host-a",
+      "runtime": "x86_64-unknown-linux-gnu",
+      "sha256": "b4af2887296fb08c26141f9127c01d3983d93e424607e1ec93b696066186229d",
+      "target": "native"
+    },
+    "wasm_wasm32.json": {
+      "bytes": 479,
+      "host": "host-a",
+      "runtime": "wasmtime 47.0.3 (5554cc1a6 2026-07-31)",
+      "sha256": "1c6720e4ff7de3169bae684f97cf5877eb60a597fa53d32ec7a67b9359492f0f",
+      "target": "wasm32"
+    }
+  },
+  "commit": "ac1fc710b3ddd9ee70e0b8641c735c421470c242"
+}

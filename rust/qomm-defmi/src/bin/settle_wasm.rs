@@ -46,7 +46,7 @@ fn run(bits: usize, repeats: usize) -> (f64, f64, f64, usize, usize) {
     let shares: BTreeMap<_, _> = secret.into_iter()
         .map(|(id, s)| (id, frost::keys::KeyPackage::try_from(s).unwrap()))
         .collect();
-    let bounds = Bounds { amount_bits: bits, price_bits: bits };
+    let bounds = Bounds { amount_bits: bits, price_bits: bits, ..Bounds::default() };
     let issuer = Issuer::new(key.clone(), bounds.clone());
 
     let ceiling = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };

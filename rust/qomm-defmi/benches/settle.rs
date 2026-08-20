@@ -62,7 +62,7 @@ fn run(bits: usize, repeats: usize) -> Row {
     let shares: BTreeMap<_, _> = secret.into_iter()
         .map(|(id, s)| (id, frost::keys::KeyPackage::try_from(s).unwrap()))
         .collect();
-    let bounds = Bounds { amount_bits: bits, price_bits: bits };
+    let bounds = Bounds { amount_bits: bits, price_bits: bits, ..Bounds::default() };
     let issuer = Issuer::new(key.clone(), bounds.clone());
 
     let mut issue_ms = Vec::new();

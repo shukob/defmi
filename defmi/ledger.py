@@ -20,6 +20,12 @@ nothing is created, nothing goes negative, and nothing settles twice.
 from __future__ import annotations
 
 import hashlib
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey, Ed25519PublicKey,
+)
+
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -88,17 +94,60 @@ class ConfidentialLedger:
     """Opaque handles to committed balances, with an auditable conservation check."""
 
     def __init__(self, group: Group, key: Pedersen | None = None,
-                 max_balance: int = MAX_BALANCE):
+                 max_balance: int = MAX_BALANCE,
+                 issuer: Ed25519PublicKey | None = None):
         self.group = group
         self.key = key or Pedersen(group, b"qomm:defmi:v1")
         self.max_balance = max_balance
+        # Who is allowed to create balance. A ledger without one takes any
+        # opening commitment as issued, which makes conservation a statement
+        # about what was admitted rather than about what exists --- see
+        # `open_account`.
+        self.issuer = issuer
         self._accounts: dict[bytes, LedgerEntry] = {}
         self._minted = group.identity()      # running total of everything issued
+        self._issued: set[bytes] = set()     # authorisations already used
 
     # --- issuance -------------------------------------------------------
-    def open_account(self, handle: bytes, balance_commitment) -> LedgerEntry:
+    def issuance_body(self, handle: bytes, balance_commitment, nonce: bytes) -> bytes:
+        """What an issuer signs to allow one opening balance to exist."""
+        return hashlib.sha256(
+            b"QOMM:DEFMI:ISSUE:v1"
+            + len(handle).to_bytes(4, "big") + handle
+            + self.group.encode(balance_commitment)
+            + len(nonce).to_bytes(4, "big") + nonce).digest()
+
+    def open_account(self, handle: bytes, balance_commitment,
+                     authorisation: bytes | None = None,
+                     nonce: bytes = b"") -> LedgerEntry:
+        """Admit a balance, and say who was allowed to create it.
+
+        This used to take any commitment and fold it straight into `minted`, so
+        the conservation check said "nothing has been created or destroyed since
+        the ledger accepted these" and not "only an issuer created anything".
+        Anyone who could call this could mint. A ledger constructed with an
+        issuer now requires that issuer's signature over the handle, the
+        commitment and a nonce it has not seen before; one without an issuer
+        still accepts anything and says so, because the test fixtures and the
+        conservation measurements do not need an issuance model and should not
+        pretend to have one.
+        """
         if handle in self._accounts:
             raise ValueError("handle already open")
+        if self.issuer is not None:
+            if authorisation is None:
+                raise InsufficientProof(
+                    "this ledger has an issuer, so an opening balance needs its "
+                    "authorisation")
+            body = self.issuance_body(handle, balance_commitment, nonce)
+            if body in self._issued:
+                raise InsufficientProof("that issuance authorisation was already used")
+            try:
+                self.issuer.verify(authorisation, body)
+            except InvalidSignature as bad:
+                raise InsufficientProof(
+                    "the opening balance is not signed by the issuer") from bad
+            self._issued.add(body)
         entry = LedgerEntry(handle, balance_commitment, 0)
         self._accounts[handle] = entry
         self._minted = self.group.mul(self._minted, balance_commitment)

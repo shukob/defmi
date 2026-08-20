@@ -8,6 +8,7 @@
 //! signature on the instruction.
 
 use bulletproofs::{BulletproofGens, RangeProof};
+use ed25519_dalek::{Signature as IssuerSignature, Verifier, VerifyingKey};
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::Identity;
@@ -15,7 +16,7 @@ use merlin::Transcript;
 use qomm_zk::pedersen::Pedersen;
 use rand_core::{CryptoRng, RngCore};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::assets::BlindedTag;
 use qomm_zk::adaptor::{self, Signature};
@@ -60,6 +61,22 @@ pub struct Pending {
     pub deadline: u64,
 }
 
+/// What an issuer signs to let one opening balance exist.
+///
+/// The handle it is for, the commitment it is worth and a nonce, so an
+/// authorisation cannot be moved to another account, restated for another
+/// amount, or replayed.
+pub fn issuance_body(handle: &[u8], balance: &RistrettoPoint, nonce: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"QOMM:DEFMI:ISSUE:v1");
+    hasher.update((handle.len() as u64).to_be_bytes());
+    hasher.update(handle);
+    hasher.update(balance.compress().as_bytes());
+    hasher.update((nonce.len() as u64).to_be_bytes());
+    hasher.update(nonce);
+    hasher.finalize().to_vec()
+}
+
 pub struct Ledger {
     pub key: Pedersen,
     pub bits: usize,
@@ -67,6 +84,10 @@ pub struct Ledger {
     accounts: BTreeMap<Vec<u8>, RistrettoPoint>,
     pending: BTreeMap<Vec<u8>, Pending>,
     minted: RistrettoPoint,
+    /// Who may create balance. `None` accepts any opening and says so; see
+    /// `open_authorised`.
+    issuer: Option<VerifyingKey>,
+    issued: BTreeSet<Vec<u8>>,
 }
 
 impl Ledger {
@@ -77,13 +98,50 @@ impl Ledger {
             accounts: BTreeMap::new(),
             pending: BTreeMap::new(),
             minted: RistrettoPoint::identity(),
+            issuer: None,
+            issued: BTreeSet::new(),
         }
     }
 
+    /// A ledger where balance can only come from one place.
+    pub fn under_issuer(key: Pedersen, bits: usize, issuer: VerifyingKey) -> Self {
+        let mut ledger = Ledger::new(key, bits);
+        ledger.issuer = Some(issuer);
+        ledger
+    }
+
+    /// Admit a balance without asking where it came from.
+    ///
+    /// The conservation check below then says "nothing has been created or
+    /// destroyed since the ledger accepted these", which is not the same
+    /// sentence as "only an issuer created anything". Fixtures and the
+    /// conservation measurements use this deliberately; a deployment wants
+    /// `under_issuer` and `open_authorised`.
     pub fn open(&mut self, handle: &[u8], balance: RistrettoPoint) {
+        assert!(self.issuer.is_none(),
+                "this ledger has an issuer; use open_authorised");
         assert!(!self.accounts.contains_key(handle), "handle already open");
         self.accounts.insert(handle.to_vec(), balance);
         self.minted += balance;
+    }
+
+    /// Admit a balance an issuer put its name to.
+    pub fn open_authorised(&mut self, handle: &[u8], balance: RistrettoPoint,
+                           nonce: &[u8], authorisation: &IssuerSignature)
+        -> Result<(), &'static str>
+    {
+        let issuer = self.issuer.as_ref().ok_or("this ledger has no issuer")?;
+        if self.accounts.contains_key(handle) { return Err("handle already open"); }
+        let body = issuance_body(handle, &balance, nonce);
+        if self.issued.contains(&body) {
+            return Err("that issuance authorisation was already used");
+        }
+        issuer.verify_strict(&body, authorisation)
+            .map_err(|_| "the opening balance is not signed by the issuer")?;
+        self.issued.insert(body);
+        self.accounts.insert(handle.to_vec(), balance);
+        self.minted += balance;
+        Ok(())
     }
 
     pub fn balance(&self, handle: &[u8]) -> Option<&RistrettoPoint> {

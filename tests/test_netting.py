@@ -53,8 +53,13 @@ def make_cycle(group, mode, participants=3, *, attest=False,
     registry = AssetRegistry(group, key, 16)
     sec_tag, sec_gamma = registry.blind(3)
     cash_tag, cash_gamma = registry.blind(0)
+    # One quorum, dealt once, and a venue that trusts exactly it.
+    issuer = InstructionIssuer(group, key, quorum_secret=key.random_blinding(),
+                               quorum_blinding=key.random_blinding())
     cycle = NettingCycle(group, key, mode, sec_tag, sec_gamma, cash_tag, cash_gamma,
-                         venue=SettlementVenue(group, key), attest_batch=attest)
+                         venue=SettlementVenue(group, key,
+                                               quorum_key=issuer.quorum_key),
+                         attest_batch=attest)
     holders = {}
     for i in range(participants):
         handle = f"p{i}".encode()
@@ -62,7 +67,7 @@ def make_cycle(group, mode, participants=3, *, attest=False,
         holders[handle] = holder
         cycle.securities.open(handle, cycle.securities.tagged.commit(*holder.securities))
         cycle.cash.open(handle, cycle.cash.tagged.commit(*holder.cash))
-    return key, InstructionIssuer(group, key), cycle, holders
+    return key, issuer, cycle, holders
 
 
 def make_order(group, key, issuer, cycle, holders, seller, buyer, quantity, price):

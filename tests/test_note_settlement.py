@@ -39,8 +39,15 @@ def group():
 def venue(group):
     key = Pedersen(group, b"qomm:defmi:v1")
     registry = AssetRegistry(group, key, 16)
-    defmi = NoteDefmi(group, key, venue=SettlementVenue(group, key))
-    issuer = InstructionIssuer(group, key)
+    # One quorum, dealt once, and a venue that trusts exactly it. An issuer
+    # that deals a fresh quorum per instruction is one that can sign for
+    # itself, which is what the venue is built to notice.
+    _issuer = InstructionIssuer(group, key, quorum_secret=key.random_blinding(),
+                                quorum_blinding=key.random_blinding())
+    issuer = _issuer
+    defmi = NoteDefmi(group, key,
+                      venue=SettlementVenue(group, key,
+                                            quorum_key=issuer.quorum_key))
     sec_key = key.with_value_generator(registry.tags[3])
     cash_key = key.with_value_generator(registry.tags[0])
     seller, buyer = Wallet(group), Wallet(group)

@@ -36,8 +36,15 @@ def group():
 @pytest.fixture()
 def venue(group):
     key = Pedersen(group, b"qomm:defmi:v1")
-    defmi = Defmi(group, key, venue=SettlementVenue(group, key))
-    issuer = InstructionIssuer(group, key)
+    # One quorum, dealt once, and a venue that trusts exactly it. An issuer
+    # that deals a fresh quorum per instruction is one that can sign for
+    # itself, which is what the venue is built to notice.
+    _issuer = InstructionIssuer(group, key, quorum_secret=key.random_blinding(),
+                                quorum_blinding=key.random_blinding())
+    issuer = _issuer
+    defmi = Defmi(group, key,
+                  venue=SettlementVenue(group, key,
+                                        quorum_key=issuer.quorum_key))
     # blindings live with the account holders; the ledger never sees them, which
     # is why the test has to keep them itself
     state = {
@@ -270,8 +277,10 @@ def tagged(group):
 
 
 def _tagged_venue(group, key, registry, asset: int):
-    defmi = Defmi(group, key, venue=SettlementVenue(group, key))
-    issuer = InstructionIssuer(group, key)
+    issuer = InstructionIssuer(group, key, quorum_secret=key.random_blinding(),
+                               quorum_blinding=key.random_blinding())
+    defmi = Defmi(group, key,
+                  venue=SettlementVenue(group, key, quorum_key=issuer.quorum_key))
     asset_key = key.with_value_generator(registry.tags[asset])
     state = {"sec": (SEC_BALANCE, key.random_blinding()),
              "cash": (CASH_BALANCE, key.random_blinding())}
@@ -462,3 +471,78 @@ def test_a_stale_range_proof_on_a_bounded_amount_is_refused(group, venue):
     accepted, reason = defmi.securities.check_transfer(
         b"sec:seller", leg, b"ctx", amount_bounded=True)
     assert not accepted and "stale range proof" in reason
+
+
+# --- who is allowed to create balance ---------------------------------------
+#
+# `open_account` used to take any commitment and fold it into `minted`, so the
+# conservation check said "nothing has been created or destroyed since the
+# ledger accepted these" and not "only an issuer created anything". Anyone who
+# could call it could mint.
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (        # noqa: E402
+    Ed25519PrivateKey,
+)
+
+from defmi.ledger import ConfidentialLedger, InsufficientProof         # noqa: E402
+
+
+def _issuing_ledger(group):
+    signer = Ed25519PrivateKey.generate()
+    ledger = ConfidentialLedger(group, issuer=signer.public_key())
+    return signer, ledger
+
+
+def _authorised(signer, ledger, handle, commitment, nonce=b"n1"):
+    return signer.sign(ledger.issuance_body(handle, commitment, nonce))
+
+
+def test_a_ledger_with_an_issuer_refuses_an_unsigned_opening(group):
+    signer, ledger = _issuing_ledger(group)
+    commitment = ledger.key.commit(1_000_000, ledger.key.random_blinding())
+    with pytest.raises(InsufficientProof, match="authorisation"):
+        ledger.open_account(b"alice", commitment)
+
+
+def test_a_signed_opening_is_admitted(group):
+    signer, ledger = _issuing_ledger(group)
+    commitment = ledger.key.commit(1_000_000, ledger.key.random_blinding())
+    entry = ledger.open_account(b"alice", commitment,
+                                _authorised(signer, ledger, b"alice", commitment), b"n1")
+    assert entry.handle == b"alice"
+
+
+def test_an_authorisation_for_another_handle_does_not_transfer(group):
+    signer, ledger = _issuing_ledger(group)
+    commitment = ledger.key.commit(1_000_000, ledger.key.random_blinding())
+    for_alice = _authorised(signer, ledger, b"alice", commitment)
+    with pytest.raises(InsufficientProof, match="signed by the issuer"):
+        ledger.open_account(b"mallory", commitment, for_alice, b"n1")
+
+
+def test_an_authorisation_for_another_amount_does_not_transfer(group):
+    signer, ledger = _issuing_ledger(group)
+    small = ledger.key.commit(1, ledger.key.random_blinding())
+    large = ledger.key.commit(10 ** 9, ledger.key.random_blinding())
+    for_small = _authorised(signer, ledger, b"alice", small)
+    with pytest.raises(InsufficientProof, match="signed by the issuer"):
+        ledger.open_account(b"alice", large, for_small, b"n1")
+
+
+def test_an_authorisation_cannot_be_used_twice(group):
+    signer, ledger = _issuing_ledger(group)
+    commitment = ledger.key.commit(1_000_000, ledger.key.random_blinding())
+    signature = _authorised(signer, ledger, b"alice", commitment)
+    ledger.open_account(b"alice", commitment, signature, b"n1")
+    ledger._accounts.pop(b"alice")           # the handle check is not the control here
+    with pytest.raises(InsufficientProof, match="already used"):
+        ledger.open_account(b"alice", commitment, signature, b"n1")
+
+
+def test_another_key_cannot_stand_in_for_the_issuer(group):
+    signer, ledger = _issuing_ledger(group)
+    commitment = ledger.key.commit(1_000_000, ledger.key.random_blinding())
+    impostor = Ed25519PrivateKey.generate()
+    forged = impostor.sign(ledger.issuance_body(b"alice", commitment, b"n1"))
+    with pytest.raises(InsufficientProof, match="signed by the issuer"):
+        ledger.open_account(b"alice", commitment, forged, b"n1")

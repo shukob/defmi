@@ -2,6 +2,7 @@
 
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
+use ed25519_dalek::{Signer, SigningKey};
 use qomm_defmi::assets::AssetRegistry;
 use qomm_defmi::ledger::Ledger;
 use qomm_defmi::settlement::*;
@@ -286,4 +287,65 @@ fn accounts_are_a_function_of_the_handle_and_the_rail() {
     assert_ne!(account_of(&a, SECURITIES_RAIL), account_of(&b, SECURITIES_RAIL));
     assert_ne!(account_of(&a, SECURITIES_RAIL), account_of(&a, CASH_RAIL));
     assert_eq!(account_of(&a, CASH_RAIL), account_of(&a, CASH_RAIL));
+}
+
+// --- who is allowed to create balance ---------------------------------------
+//
+// `open` used to take any commitment and fold it into `minted`, so the
+// conservation check said "nothing has been created or destroyed since the
+// ledger accepted these" and not "only an issuer created anything". Anyone who
+// could call it could mint.
+
+#[test]
+fn a_ledger_under_an_issuer_refuses_an_unsigned_opening() {
+    let mut rng = OsRng;
+    let key = Pedersen::new(b"qomm:defmi:v1");
+    let issuer = SigningKey::generate(&mut rng);
+    let mut ledger = Ledger::under_issuer(key.clone(), 32, issuer.verifying_key());
+    let balance = key.commit_u64(1_000, &Scalar::random(&mut rng));
+    let elsewhere = SigningKey::generate(&mut rng);
+    let body = qomm_defmi::ledger::issuance_body(b"alice", &balance, b"n1");
+    assert_eq!(
+        ledger.open_authorised(b"alice", balance, b"n1", &elsewhere.sign(&body)),
+        Err("the opening balance is not signed by the issuer"));
+}
+
+#[test]
+fn an_issued_opening_is_admitted_once_and_not_twice() {
+    let mut rng = OsRng;
+    let key = Pedersen::new(b"qomm:defmi:v1");
+    let issuer = SigningKey::generate(&mut rng);
+    let mut ledger = Ledger::under_issuer(key.clone(), 32, issuer.verifying_key());
+    let balance = key.commit_u64(1_000, &Scalar::random(&mut rng));
+    let body = qomm_defmi::ledger::issuance_body(b"alice", &balance, b"n1");
+    let signature = issuer.sign(&body);
+    assert_eq!(ledger.open_authorised(b"alice", balance, b"n1", &signature), Ok(()));
+    assert_eq!(ledger.open_authorised(b"alice", balance, b"n1", &signature),
+               Err("handle already open"));
+    assert_eq!(ledger.open_authorised(b"bob", balance, b"n1", &signature),
+               Err("the opening balance is not signed by the issuer"),
+               "an authorisation moved to another handle");
+}
+
+#[test]
+fn an_authorisation_does_not_carry_to_another_amount() {
+    let mut rng = OsRng;
+    let key = Pedersen::new(b"qomm:defmi:v1");
+    let issuer = SigningKey::generate(&mut rng);
+    let mut ledger = Ledger::under_issuer(key.clone(), 32, issuer.verifying_key());
+    let small = key.commit_u64(1, &Scalar::random(&mut rng));
+    let large = key.commit_u64(1_000_000, &Scalar::random(&mut rng));
+    let signature = issuer.sign(&qomm_defmi::ledger::issuance_body(b"alice", &small, b"n1"));
+    assert_eq!(ledger.open_authorised(b"alice", large, b"n1", &signature),
+               Err("the opening balance is not signed by the issuer"));
+}
+
+#[test]
+#[should_panic(expected = "use open_authorised")]
+fn the_unchecked_opening_is_closed_once_a_ledger_has_an_issuer() {
+    let mut rng = OsRng;
+    let key = Pedersen::new(b"qomm:defmi:v1");
+    let issuer = SigningKey::generate(&mut rng);
+    let mut ledger = Ledger::under_issuer(key.clone(), 32, issuer.verifying_key());
+    ledger.open(b"alice", key.commit_u64(1_000, &Scalar::random(&mut rng)));
 }
