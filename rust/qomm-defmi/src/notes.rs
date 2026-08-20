@@ -104,12 +104,16 @@ pub struct NoteLedger {
     gens: BulletproofGens,
     pub notes: Vec<Note>,
     spent: HashSet<[u8; 32]>,
+    /// The state root, kept rather than recomputed. See `snapshot`.
+    rolling: sha2::Sha256,
 }
 
 impl NoteLedger {
     pub fn new(key: Pedersen, bits: usize) -> Self {
+        let mut rolling = sha2::Sha256::new();
+        rolling.update(b"QOMM:DEFMI:NOTES:v1");
         NoteLedger { gens: BulletproofGens::new(bits, 2), key, bits,
-                     notes: Vec::new(), spent: HashSet::new() }
+                     notes: Vec::new(), spent: HashSet::new(), rolling }
     }
 
     fn masks(&self, shared: &Scalar) -> (Scalar, Scalar) {
@@ -148,6 +152,7 @@ impl NoteLedger {
     }
 
     pub fn add(&mut self, note: Note) -> usize {
+        self.rolling.update(self.commitment_of(&note).compress().as_bytes());
         self.notes.push(note);
         self.notes.len() - 1
     }
@@ -324,21 +329,31 @@ impl NoteLedger {
     pub fn apply_spend(&mut self, proof: &SpendProof, notes: Vec<Note>) -> Result<(), &'static str> {
         let key = proof.serial_point.compress().to_bytes();
         if !self.spent.insert(key) { return Err("serial already spent"); }
+        self.rolling.update(b"s");
+        self.rolling.update(key);
         // spent notes stay in the pool: removing them would say which one went
         for note in notes { self.add(note); }
         Ok(())
     }
 
+    /// The state root, in constant time.
+    ///
+    /// This used to walk the whole ledger --- compressing every note that had
+    /// ever existed and re-sorting every spent serial --- and a settlement
+    /// takes four of them, two rails before and after. `benches/rings.rs`
+    /// measured what that costs: 4.3 us a note, so 17.7 ms of root against
+    /// 8 ms of cryptography at a thousand notes, and 93.5 ms against the same
+    /// 8 ms at four thousand. A settlement cost proportional to total history
+    /// is the one thing the account rail was careful not to have.
+    ///
+    /// Nothing about the ledger required it. Notes are only ever appended ---
+    /// spent ones stay in the pool, because removing one would say which it
+    /// was --- and serials are only ever inserted, so the hash of the whole
+    /// history is a running hash extended once per change. The sort was buying
+    /// order-independence for a sequence that already has an order: the one
+    /// the chain applied.
     pub fn snapshot(&self) -> [u8; 32] {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(b"QOMM:DEFMI:NOTES:v1");
-        for note in &self.notes {
-            hasher.update(self.commitment_of(note).compress().as_bytes());
-        }
-        let mut serials: Vec<_> = self.spent.iter().collect();
-        serials.sort();
-        for serial in serials { hasher.update(serial); }
-        hasher.finalize().into()
+        self.rolling.clone().finalize().into()
     }
 }
 
@@ -351,6 +366,44 @@ fn small_scalar(scalar: &Scalar, bits: usize) -> Option<u64> {
     let value = u64::from_le_bytes(value);
     if bits < 64 && value >= (1u64 << bits) { return None; }
     Some(value)
+}
+
+/// Decoys drawn from the newest `window` notes, with the real note inside.
+///
+/// `ring_for` draws uniformly over the whole pool, and that is only an
+/// anonymity set if a real spend is uniform over the whole pool too. It is not:
+/// a settlement pays with a note it was paid, so the spent note is recent, and
+/// a uniform decoy usually is not. An observer that guesses the newest member
+/// of the ring then wins far more often than one over the ring size ---
+/// `benches/rings.rs` measures how much more.
+///
+/// The fix is to draw the decoys from where the real ones come from. `window`
+/// is how far back that is, in notes; a pool shorter than the window falls back
+/// to the whole pool, which is the same thing when there is no history to
+/// stand out against.
+pub fn ring_recent(pool: usize, index: usize, size: usize, window: usize, seed: u64)
+    -> Result<Vec<usize>, &'static str> {
+    if size < 2 || !size.is_power_of_two() { return Err("ring size must be a power of two, at least two"); }
+    if pool < size { return Err("the pool is smaller than the ring"); }
+    if index >= pool { return Err("the note is not in the pool"); }
+    // The window has to hold the ring, and it has to reach back far enough to
+    // cover the real note --- a window that excluded it would name it outright.
+    let span = window.max(size).max(pool - index);
+    let span = span.min(pool);
+    let floor = pool - span;
+    let mut ring: Vec<usize> = Vec::with_capacity(size);
+    ring.push(index);
+    let mut state = seed | 1;
+    while ring.len() < size {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let candidate = floor + (state >> 33) as usize % span;
+        if !ring.contains(&candidate) { ring.push(candidate); }
+    }
+    for i in (1..ring.len()).rev() {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ring.swap(i, (state >> 33) as usize % (i + 1));
+    }
+    Ok(ring)
 }
 
 /// Decoys drawn from the pool, with the real note somewhere inside.

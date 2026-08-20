@@ -172,6 +172,48 @@ Both rails were made note rails and the settlement itself was run through them. 
 The account version settles in 48.8 ± 2.0 (n=15) ms at 40 bits. Hiding the counterparties costs +82% at ring 2 and +72% at ring 64.
 **Adding up the parts was off by more than a factor of two.** A note leg and an account leg both carry two range proofs; the difference is only the ring proof, the serial proof and one equality proof.
 
+### 5.2 What the ring is actually worth
+
+*Taken on `host-a`.*
+
+Every table above prices the ring. None of them asks what it buys, and the answer has been the ring size --- an observer who knows a leg spent one of R notes names it with probability 1/R. That is what the proof guarantees and it is not what a reader of the chain gets.
+
+A ring is an anonymity set only if the decoys are indistinguishable from the real note. `ring_for` drew its decoys uniformly over every note the ledger had ever held. A real spend is of a note the spender was just paid, because that is what settling is --- you are paid, and then you pay. Recent notes have high indices and uniform decoys mostly do not, so **an observer who guesses the newest member of the ring** does far better than 1/R and pays nothing for it.
+
+The strategy was stated before the run and the observer is scored at the better of the two, because a real one would take it. `traffic` is how many other settlements land between one firm being paid and paying: the pool grows by four notes a settlement, so it is other people's activity, measured in notes that arrive above yours.
+
+| decoys | ring | traffic 0 | traffic 4 | traffic 16 | 1/R |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| uniform | 4 | 1.000 | 0.844 | 0.781 | 0.250 |
+| uniform | 8 | 1.000 | 0.750 | 0.594 | 0.125 |
+| uniform | 16 | 1.000 | 0.547 | 0.359 | 0.062 |
+| recent | 4 | 1.000 | 0.469 | 0.250 | 0.250 |
+| recent | 8 | 1.000 | 0.188 | 0.125 | 0.125 |
+| recent | 16 | 1.000 | 0.062 | 0.062 | 0.062 |
+
+**With no other traffic the ring is worth nothing at all** --- 1.000 at every size, under either rule, because a note spent one settlement after it arrived is the newest note there is and no decoy can be newer than the newest. That is not a decoy-selection bug; it is the honest shape of the thing:
+
+> an anonymity set on a note rail is other people's traffic, and the decoy rule only decides how much of it the ring can use.
+
+Which is the same shape as §6.1 below. A construction that hides you in a crowd does not work in an empty room, and saying so is part of reporting what it does.
+
+What the decoy rule is worth is the gap between the two blocks. At ring 16 with 16 settlements of other traffic, uniform decoys leave the observer at **0.359** against a nominal 0.062 --- 5.8 times what the proof promises. Drawing the decoys from the same recency window that real spends come from brings it to **0.062**, which is the nominal figure exactly. `ring_recent` is that rule and it is thirty lines.
+
+### 5.3 A settlement that got slower the longer the ledger ran
+
+The benchmark above found something that is not about rings. Its verification times climbed with the pool, and nothing in `check_spend` is proportional to the pool --- the ring proof, the range proofs and the balance check are all in the ring. What was proportional to it was the **state root**: `snapshot` compressed every note the ledger had ever held and re-sorted every spent serial, and a settlement takes four of them, two rails before and after.
+
+| notes held | root by walking | root as kept | |
+| ---: | ---: | ---: | ---: |
+| 64 | 272.8 ± 3.9 (n=9) us | 0.12 ± 0.03 (n=9) us | 2,204x |
+| 256 | 1068.2 ± 10.0 (n=9) us | 0.12 ± 0.01 (n=9) us | 8,699x |
+| 1,024 | 4338.5 ± 63.4 (n=9) us | 0.14 ± 0.04 (n=9) us | 31,737x |
+| 4,096 | 17012.4 ± 48.1 (n=9) us | 0.19 ± 0.03 (n=9) us | 90,060x |
+
+At 4,096 notes the four roots in one settlement came to **68.0 ms**, against about 8 ms of cryptography --- the bookkeeping had become an order of magnitude more expensive than the proofs, and it would keep growing, because it was a function of total history rather than of activity. That is the exact property §7 checks for the account rail and it had gone unchecked here.
+
+Nothing about the ledger required it. Notes are only ever appended --- a spent note stays in the pool, because removing it would say which one went --- and serials are only ever inserted, so the hash of the whole history is a running hash extended once per change. The sort was buying order-independence for a sequence that already has an order: the one the chain applied. The root is now kept rather than recomputed and the column above is flat.
+
 ## 6. Payment versus payment, across two ledgers
 
 *The two tables in this section were taken on `host-a`, not the `host-c` of the rest of this document: they are Rust benchmarks and they wanted a machine that was not doing anything else.*
@@ -253,7 +295,7 @@ With a handle derived per venue --- `qomm_zkpi::handles`, one seed and an unrela
 
 This is worth stating plainly because the property was written down as prose before it was code, and prose does not hold. The design said handles are derived per venue so that one firm is two unrelated points; the library offered no way to derive them, so the obvious integration was the one that loses. It is code now, and the test that goes with it runs the scheme that suggests itself first --- one secret scaled by a public per-venue factor --- and shows it is publicly linkable.
 
-Two things the table is not. The observer here is given **no timing**: every prepare is placed in one block, so a real observer watching them arrive does better than 1/k. And these are account rails; the note ledger of §5 removes handles altogether, which is a stronger statement than deriving them well, but the Rust side has no note-rail DvP so that combination is argued for and not measured.
+Two things the table is not. The observer here is given **no timing**: every prepare is placed in one block, so a real observer watching them arrive does better than 1/k. And these are account rails. The note ledger of §5 removes the handle rather than deriving it well, which sounds like the stronger answer and is, but §5.2 measured what it is worth and the two findings are the same one: **both constructions hide you in other people's traffic and neither does anything without it.** A ring with no other settlements around it names its note with certainty, exactly as an adaptor with one swap in flight names its partner leg. What differs is the exchange rate --- how much traffic each one needs to buy a given amount of doubt --- and not whether traffic is what is being spent.
 
 This measurement first ran against a version where the property was the caller's to keep. The instruction named two handles and the package named four accounts, and nothing compared them --- so a caller who derived handles per venue and then opened accounts under one name everywhere got the losing row of the table while believing it had the winning one. That is now closed: the four account names are **derived from the two signed handles** (`Sides::of`, one hash of the handle and the rail), `build_package` no longer takes them as an argument, and a package whose accounts disagree with its instruction is rejected before any proof is examined. The per-venue property is enforced where it is used rather than assumed of the caller.
 
@@ -269,20 +311,6 @@ Verification only --- proving is the counterparty's work and the clock is stoppe
 | 8 | 157.0 ± 3.6 (n=7) | 7.49x |
 
 Verifications of independent packages share nothing, so they parallelise completely: **157 per second** on 8 workers. A settlement node's capacity is a procurement question, not a design one.
-
-A second host with more cores (`host-a`, 64 logical cores) was measured too. Its calibration is 68.3 us per scalar multiplication against 37.3 us here, so it is **1.83x slower per core**. Its single-worker throughput differs by 1.83x (21.0 to 11.5 per second), which is the same ratio by an independent route.
-
-| workers | settlements/s | vs one worker | vs linear |
-| ---: | ---: | ---: | ---: |
-| 1 | 11.5 | 1.00x | 100% |
-| 2 | 22.9 | 2.00x | 100% |
-| 4 | 45.8 | 4.00x | 100% |
-| 8 | 91.4 | 7.98x | 100% |
-| 16 | 181.7 | 15.86x | 99% |
-| 32 | 364.7 | 31.83x | 99% |
-| 64 | 688.6 | 60.10x | 94% |
-
-**689 per second** on 64 workers, only 6% short of linear. Nothing is shared between verifications, so this shape is what was expected.
 
 ## 8. The Rust port
 

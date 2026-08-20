@@ -50,6 +50,8 @@ def main() -> int:
     pvp = json.loads(pvp_path.read_text()) if pvp_path.exists() else None
     same_path = ART / "same_chain.json"
     same_chain = json.loads(same_path.read_text()) if same_path.exists() else None
+    rings_path = ART / "rings.json"
+    rings = json.loads(rings_path.read_text()) if rings_path.exists() else None
 
     out: list[str] = []
     w = out.append
@@ -362,6 +364,100 @@ def main() -> int:
               "difference is only the ring proof, the serial proof and one "
               "equality proof.\n")
 
+    if rings:
+        rows = rings["rows"]
+        by = {(r["decoys"], r["ring"], r["traffic"]): r for r in rows}
+        sizes = sorted({r["ring"] for r in rows})
+        loads = sorted({r["traffic"] for r in rows})
+        w("### 5.2 What the ring is actually worth\n")
+        if rings["host"] != d["host"]:
+            w(f"*Taken on `{label(rings['host'])}`.*\n")
+        w("Every table above prices the ring. None of them asks what it buys, "
+          "and the answer has been the ring size --- an observer who knows a "
+          "leg spent one of R notes names it with probability 1/R. That is what "
+          "the proof guarantees and it is not what a reader of the chain "
+          "gets.\n")
+        w("A ring is an anonymity set only if the decoys are indistinguishable "
+          "from the real note. `ring_for` drew its decoys uniformly over every "
+          "note the ledger had ever held. A real spend is of a note the spender "
+          "was just paid, because that is what settling is --- you are paid, "
+          "and then you pay. Recent notes have high indices and uniform decoys "
+          "mostly do not, so **an observer who guesses the newest member of the "
+          "ring** does far better than 1/R and pays nothing for it.\n")
+        w("The strategy was stated before the run and the observer is scored at "
+          "the better of the two, because a real one would take it. `traffic` "
+          "is how many other settlements land between one firm being paid and "
+          "paying: the pool grows by four notes a settlement, so it is other "
+          "people's activity, measured in notes that arrive above yours.\n")
+        header = "| decoys | ring | " + " | ".join(
+            f"traffic {t}" for t in loads) + " | 1/R |"
+        w(header)
+        w("| --- | ---: | " + " | ".join("---:" for _ in loads) + " | ---: |")
+        for decoys in ("uniform", "recent"):
+            for size in sizes:
+                cells = []
+                for load in loads:
+                    r = by.get((decoys, size, load))
+                    cells.append("--" if r is None
+                                 else f"{r['observer_success']:.3f}")
+                w(f"| {decoys} | {size} | " + " | ".join(cells)
+                  + f" | {1 / size:.3f} |")
+        w("")
+        worst = by[("uniform", sizes[-1], loads[-1])]
+        best = by[("recent", sizes[-1], loads[-1])]
+        w(f"**With no other traffic the ring is worth nothing at all** --- "
+          "1.000 at every size, under either rule, because a note spent one "
+          "settlement after it arrived is the newest note there is and no decoy "
+          "can be newer than the newest. That is not a decoy-selection bug; it "
+          "is the honest shape of the thing:\n")
+        w("> an anonymity set on a note rail is other people's traffic, and the "
+          "decoy rule only decides how much of it the ring can use.\n")
+        w("Which is the same shape as §6.1 below. A construction that hides you "
+          "in a crowd does not work in an empty room, and saying so is part of "
+          "reporting what it does.\n")
+        w(f"What the decoy rule is worth is the gap between the two blocks. At "
+          f"ring {sizes[-1]} with {loads[-1]} settlements of other traffic, "
+          f"uniform decoys leave the observer at "
+          f"**{worst['observer_success']:.3f}** against a nominal "
+          f"{1 / sizes[-1]:.3f} --- {worst['observer_success'] * sizes[-1]:.1f} "
+          f"times what the proof promises. Drawing the decoys from the same "
+          f"recency window that real spends come from brings it to "
+          f"**{best['observer_success']:.3f}**, which is the nominal figure "
+          "exactly. `ring_recent` is that rule and it is thirty lines.\n")
+
+    if rings and rings.get("state_root"):
+        w("### 5.3 A settlement that got slower the longer the ledger ran\n")
+        w("The benchmark above found something that is not about rings. Its "
+          "verification times climbed with the pool, and nothing in "
+          "`check_spend` is proportional to the pool --- the ring proof, the "
+          "range proofs and the balance check are all in the ring. What was "
+          "proportional to it was the **state root**: `snapshot` compressed "
+          "every note the ledger had ever held and re-sorted every spent "
+          "serial, and a settlement takes four of them, two rails before and "
+          "after.\n")
+        w("| notes held | root by walking | root as kept | |")
+        w("| ---: | ---: | ---: | ---: |")
+        for r in rings["state_root"]:
+            ratio = value(r["walked_us"]) / max(value(r["kept_us"]), 1e-9)
+            w(f"| {r['pool']:,} | {ms(r['walked_us'])} us "
+              f"| {render(r['kept_us'], 2)} us | {ratio:,.0f}x |")
+        w("")
+        big = rings["state_root"][-1]
+        w(f"At {big['pool']:,} notes the four roots in one settlement came to "
+          f"**{value(big['per_settlement_walked_us']) / 1000:.1f} ms**, against "
+          "about 8 ms of cryptography --- the bookkeeping had become an order "
+          "of magnitude more expensive than the proofs, and it would keep "
+          "growing, because it was a function of total history rather than of "
+          "activity. That is the exact property §7 checks for the account rail "
+          "and it had gone unchecked here.\n")
+        w("Nothing about the ledger required it. Notes are only ever appended "
+          "--- a spent note stays in the pool, because removing it would say "
+          "which one went --- and serials are only ever inserted, so the hash "
+          "of the whole history is a running hash extended once per change. "
+          "The sort was buying order-independence for a sequence that already "
+          "has an order: the one the chain applied. The root is now kept rather "
+          "than recomputed and the column above is flat.\n")
+
     if pvp:
         milli, micro = pvp["milliseconds"], pvp["microseconds"]
         w("## 6. Payment versus payment, across two ledgers\n")
@@ -522,10 +618,16 @@ def main() -> int:
         w("Two things the table is not. The observer here is given **no "
           "timing**: every prepare is placed in one block, so a real observer "
           "watching them arrive does better than 1/k. And these are account "
-          "rails; the note ledger of \u00a75 removes handles altogether, which "
-          "is a stronger statement than deriving them well, but the Rust side "
-          "has no note-rail DvP so that combination is argued for and not "
-          "measured.\n")
+          "rails. The note ledger of \u00a75 removes the handle rather than "
+          "deriving it well, which sounds like the stronger answer and is, but "
+          "\u00a75.2 measured what it is worth and the two findings are the "
+          "same one: **both constructions hide you in other people's traffic "
+          "and neither does anything without it.** A ring with no other "
+          "settlements around it names its note with certainty, exactly as an "
+          "adaptor with one swap in flight names its partner leg. What differs "
+          "is the exchange rate --- how much traffic each one needs to buy a "
+          "given amount of doubt --- and not whether traffic is what is being "
+          "spent.\n")
         w("This measurement first ran against a version where the property was "
           "the caller\'s to keep. The instruction named two handles and the "
           "package named four accounts, and nothing compared them --- so a "

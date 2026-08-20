@@ -85,6 +85,7 @@ Rust:
 Python:
 
 - `defmi/`
+- `evm/`
 
 `artifacts/` holds the measurements the numbers in the paper are taken from, as
 the runners wrote them. Each carries the host it ran on as a label (`host-a`,

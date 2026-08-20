@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "same_chain"
 harness = false
+
+[[bench]]
+name = "rings"
+harness = false

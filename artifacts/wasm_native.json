@@ -1,9 +1,11 @@
 {
+  "host": "host-a",
   "target": "native",
+  "runtime": "x86_64-unknown-linux-gnu",
   "repeats": 15,
-  "calibration": {"scalar_mult_us": 35.4042},
+  "calibration": {"scalar_mult_us": 25.7363},
   "scaling": [
-    {"bits": 32, "build_ms": 9.9815, "settle_ms": 4.5520, "state_ms": 0.0159, "bytes_written": 168, "state_bytes_held": 768, "per_second": 218.92},
-    {"bits": 64, "build_ms": 18.7141, "settle_ms": 7.2733, "state_ms": 0.0166, "bytes_written": 168, "state_bytes_held": 768, "per_second": 137.17}
+    {"bits": 32, "build_ms": 8.4563, "settle_ms": 3.8359, "state_ms": 0.0162, "bytes_written": 168, "state_bytes_held": 856, "per_second": 259.59},
+    {"bits": 64, "build_ms": 15.4862, "settle_ms": 5.7454, "state_ms": 0.0162, "bytes_written": 168, "state_bytes_held": 856, "per_second": 173.56}
   ]
 }

@@ -155,3 +155,81 @@ fn a_ring_has_to_be_a_power_of_two_and_fit_the_pool() {
     assert!(ring_for(4, 0, 8, 1).is_err());
     assert!(ring_for(8, 0, 8, 1).is_ok());
 }
+
+#[test]
+fn a_recent_ring_holds_the_note_and_stays_inside_the_pool() {
+    for pool in [8usize, 64, 500] {
+        for index in [0usize, pool / 2, pool - 1] {
+            let ring = ring_recent(pool, index, 8, 32, 7).unwrap();
+            assert_eq!(ring.len(), 8);
+            assert!(ring.contains(&index), "the real note is not in its own ring");
+            assert!(ring.iter().all(|i| *i < pool), "a decoy is not in the pool");
+            let mut sorted = ring.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            assert_eq!(sorted.len(), 8, "a decoy repeats");
+        }
+    }
+}
+
+/// The window is what the sampler is for, so it has to actually bind --- and
+/// it has to stretch when the real note is older than it, because a window
+/// that excluded the real note would name it outright.
+#[test]
+fn a_recent_ring_draws_from_the_window_and_widens_to_reach_the_note() {
+    let ring = ring_recent(1000, 990, 8, 32, 3).unwrap();
+    assert!(ring.iter().all(|i| *i >= 1000 - 32), "a decoy came from outside the window");
+
+    let ring = ring_recent(1000, 10, 8, 32, 3).unwrap();
+    assert!(ring.contains(&10));
+    assert!(ring.iter().all(|i| *i >= 10), "the window did not stretch to the note");
+}
+
+#[test]
+fn a_recent_ring_rejects_what_the_uniform_one_rejects() {
+    assert!(ring_recent(8, 0, 6, 32, 1).is_err());
+    assert!(ring_recent(4, 0, 8, 32, 1).is_err());
+    assert!(ring_recent(8, 9, 8, 32, 1).is_err());
+    assert!(ring_recent(8, 0, 8, 32, 1).is_ok());
+}
+
+/// The root is kept rather than recomputed, so what has to be pinned is that
+/// keeping it says the same thing walking it did: every change moves it, and
+/// two ledgers that saw the same changes agree.
+#[test]
+fn the_state_root_moves_on_every_change_and_agrees_across_ledgers() {
+    let mut rng = OsRng;
+    let mut p = pool(&mut rng);
+    let mut seen = std::collections::HashSet::new();
+    seen.insert(p.ledger.snapshot());
+    assert_eq!(p.ledger.snapshot(), p.ledger.snapshot(), "reading it changes it");
+
+    let (_, proof, notes) = spend(&p, &mut rng, 3, 17).unwrap();
+    p.ledger.apply_spend(&proof, notes).unwrap();
+    assert!(seen.insert(p.ledger.snapshot()), "a spend left the root where it was");
+
+    let note = p.ledger.build_note(&Wallet::new(&mut rng).address, 42,
+                                   p.asset_key.commit_u64(42, &Scalar::ONE),
+                                   &Scalar::ONE, &mut rng);
+    p.ledger.add(note);
+    assert!(seen.insert(p.ledger.snapshot()), "an added note left the root alone");
+}
+
+/// A pool built the same way twice has the same root, and one note of
+/// difference is enough to part them.
+#[test]
+fn the_state_root_is_a_function_of_what_the_ledger_holds() {
+    let mut rng = OsRng;
+    let a = pool(&mut rng);
+    let b = pool(&mut rng);
+    assert_ne!(a.ledger.snapshot(), b.ledger.snapshot(),
+               "two pools of different notes share a root");
+
+    let mut c = pool(&mut rng);
+    let before = c.ledger.snapshot();
+    let extra = c.ledger.build_note(&Wallet::new(&mut rng).address, 7,
+                                    c.asset_key.commit_u64(7, &Scalar::ONE),
+                                    &Scalar::ONE, &mut rng);
+    c.ledger.add(extra);
+    assert_ne!(before, c.ledger.snapshot(), "one more note did not move the root");
+}

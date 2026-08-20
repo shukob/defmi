@@ -1,9 +1,11 @@
 {
+  "host": "host-a",
   "target": "wasm32",
+  "runtime": "wasmtime 47.0.3 (5554cc1a6 2026-07-31)",
   "repeats": 5,
-  "calibration": {"scalar_mult_us": 49.7746},
+  "calibration": {"scalar_mult_us": 81.6241},
   "scaling": [
-    {"bits": 32, "build_ms": 13.6061, "settle_ms": 5.5398, "state_ms": 0.0180, "bytes_written": 168, "state_bytes_held": 368, "per_second": 179.93},
-    {"bits": 64, "build_ms": 24.8512, "settle_ms": 8.9751, "state_ms": 0.0178, "bytes_written": 168, "state_bytes_held": 368, "per_second": 111.20}
+    {"bits": 32, "build_ms": 22.0562, "settle_ms": 9.2371, "state_ms": 0.0290, "bytes_written": 168, "state_bytes_held": 456, "per_second": 107.92},
+    {"bits": 64, "build_ms": 40.7082, "settle_ms": 15.4771, "state_ms": 0.0295, "bytes_written": 168, "state_bytes_held": 456, "per_second": 64.49}
   ]
 }

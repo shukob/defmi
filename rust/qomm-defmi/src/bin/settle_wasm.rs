@@ -168,8 +168,21 @@ fn main() {
     // generator, and writing it from inside the sandbox is the only way the
     // WebAssembly arm can produce one at all.
     if let Ok(path) = std::env::var("QOMM_WASM_JSON") {
+        // The host label has to be passed in. Under wasi the sandbox has no
+        // host name to read, and a pair of readings whose only difference is
+        // supposed to be the target is worthless if it cannot say they were
+        // taken on one machine.
+        let host = std::env::var("QOMM_HOST_LABEL")
+            .unwrap_or_else(|_| "unlabelled".to_string());
+        // Which interpreter, for the same reason. The two readings differ by a
+        // factor that an earlier pair did not show, and the first thing anyone
+        // will ask is whether the runtime moved under it.
+        let runtime = std::env::var("QOMM_WASM_RUNTIME")
+            .unwrap_or_else(|_| "unrecorded".to_string());
         let json = format!(
-            "{{\n  \"target\": \"{target}\",\n  \"repeats\": {repeats},\n  \
+            "{{\n  \"host\": \"{host}\",\n  \"target\": \"{target}\",\n  \
+\"runtime\": \"{runtime}\",\n  \
+\"repeats\": {repeats},\n  \
 \"calibration\": {{\"scalar_mult_us\": {calib:.4}}},\n  \"scaling\": [\n{}\n  ]\n}}\n",
             rows.join(",\n"));
         std::fs::write(&path, json).expect("could not write the measurement");
