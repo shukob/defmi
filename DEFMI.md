@@ -174,6 +174,8 @@ The account version settles in 48.8 ± 2.0 (n=15) ms at 40 bits. Hiding the coun
 
 ## 6. Payment versus payment, across two ledgers
 
+*The two tables in this section were taken on `host-a`, not the `host-c` of the rest of this document: they are Rust benchmarks and they wanted a machine that was not doing anything else.*
+
 DvP moves two legs together because both are on one ledger and one function decides. Two ledgers that share no state have no such function, and fair exchange between two parties with no third party is impossible in general --- so something has to pass from one side to the other. The only question is what, and who can read it.
 
 A hash lock passes a preimage that ends up in the clear on both ledgers, so anyone reading both can join the two legs on it. That is the linkage the asset tag and the note ledger were built to prevent, handed back at the last step. What is used instead is an **adaptor signature**: the first mover's claim on one ledger hands the second mover a scalar, and what each ledger records is an ordinary signature with nothing in common with the other's.
@@ -191,53 +193,69 @@ Bob draws the secret and moves first, so Bob is never at risk: if he stops after
 
 | | measured, 32-bit rails |
 | --- | ---: |
-| prepare one leg (check, and move it out of reach) | 2.39 ± 0.21 ms (n=50) |
-| the first mover's claim | 0.09 ± 0.01 ms (n=50) |
-| **the second mover's reaction** | **0.10 ± 0.00 ms (n=50)** |
-| unwind an expired leg | 1.43 ± 0.33 us (n=50) |
+| prepare one leg (check, and move it out of reach) | 1.28 ± 0.01 ms (n=25) |
+| the first mover's claim | 0.05 ± 0.00 ms (n=25) |
+| **the second mover's reaction** | **0.06 ± 0.00 ms (n=25)** |
+| unwind an expired leg | 0.63 ± 0.04 us (n=25) |
 
-**The cryptography is not what puts the money at risk.** Recovering the secret, adapting the signature and having the second ledger accept it comes to 0.10 ms. The deadline gap has to cover that *plus* the time for one ledger to publish the first claim and the other to accept the second --- block times and network round trips, which are three to five orders of magnitude larger. So the exposure is set by the settlement finality of the two ledgers and not by anything in this repository, and a deployment that wants a short window should shop for finality rather than for faster proofs.
+**The cryptography is not what puts the money at risk.** Recovering the secret, adapting the signature and having the second ledger accept it comes to 0.06 ms. The deadline gap has to cover that *plus* the time for one ledger to publish the first claim and the other to accept the second --- block times and network round trips, which are three to five orders of magnitude larger. So the exposure is set by the settlement finality of the two ledgers and not by anything in this repository, and a deployment that wants a short window should shop for finality rather than for faster proofs.
 
 Preparing costs about what a transfer costs, because that is what it is: the same check, with the amount moved into an escrow instead of into the payee. Unwinding costs nothing, and deliberately requires no signature --- the deadline is the whole authority, because demanding a signature would strand the money of anyone who lost a key, which is the failure this branch exists to prevent.
 
-### 6.1 On one chain, the same construction is a mistake
+### 6.1 On one chain, and what the unlinkability actually rests on
 
-Across two chains there is no choice: nothing spans them, so the adaptor and its window are the only way. On one chain --- two DeFMI deployments, two contract addresses --- there is a choice, and it is not the obvious one.
+*Taken on `host-a`.*
 
-A single transaction calling both venues gets atomicity from the chain for nothing, and the window is zero. But **that transaction is the link**. Two transactions with an adaptor keep the two legs cryptographically unrelated and pay at least one block. Both cannot be had, because being one transaction is what makes it atomic and what makes it linkable.
+Across two chains there is no choice about atomicity: nothing spans them, so an adaptor signature and a deadline are the only way. On one chain --- two DeFMI deployments, two contract addresses --- there is a choice. A single transaction calling both venues gets atomicity from the chain for nothing and its exposure window is zero, but that transaction is the link. Two transactions with an adaptor keep the legs cryptographically unrelated and pay at least one block.
 
-So the question is what the second arm buys. The prediction, written before running it, was: nothing --- the adaptor makes the two *claims* unrelated and does nothing about the two *prepares*, which name account handles. It is right.
+What the second arm costs is small and flat:
 
 | at 16 swaps | one transaction | adaptor |
 | --- | ---: | ---: |
 | calls | 16 | 64 |
 | state slots written | 96 | 128 |
 | bytes written | 3328 | 3072 |
-| verification | 413.2 ± 9.2 (n=9) ms | 413.3 ± 19.6 (n=9) ms |
+| verification | 282.2 ± 0.2 (n=5) ms | 291.8 ± 0.3 (n=5) ms |
 | exposure window | none | at least one block |
 
-**What a reader of the chain can still join**, using nothing but what the calls name --- take a call on one venue, find the calls on the other that name the same handles, guess uniformly among them:
+Four times the calls and a third more state slots --- holding **fewer bytes** in them, because an escrow entry is smaller than the account update it stands in for --- for **3.4% more verification** (+3.0% to +3.8% across the table). The range proofs dominate, and the escrow and the signature are a few percent beside them rather than nothing at all: this is a difference the earlier run on a loaded machine could not resolve, where both arms read 413 ms with a spread ten times the gap.
 
-| swaps in flight | between | one transaction | adaptor | chance |
-| ---: | --- | ---: | ---: | ---: |
-| 1 | distinct parties | 1.000 | **1.000** | 1.000 |
-| 2 | distinct parties | 1.000 | **1.000** | 0.500 |
-| 4 | distinct parties | 1.000 | **1.000** | 0.250 |
-| 8 | distinct parties | 1.000 | **1.000** | 0.125 |
-| 16 | distinct parties | 1.000 | **1.000** | 0.062 |
-| 1 | one pair parties | 1.000 | **1.000** | 1.000 |
-| 2 | one pair parties | 1.000 | **0.500** | 0.500 |
-| 4 | one pair parties | 1.000 | **0.250** | 0.250 |
-| 8 | one pair parties | 1.000 | **0.125** | 0.125 |
-| 16 | one pair parties | 1.000 | **0.062** | 0.062 |
+What it buys is the question, and the answer turned out to depend on something that was not cryptography at all.
 
-**Between distinct parties --- which is what a venue with more than two users looks like --- the adaptor buys nothing at all.** A prepare is a transfer, and a transfer says who is paying whom; joining "Alice pays on one venue" to "Alice is paid on the other" needs no cryptanalysis. It costs four times the calls and a third more state for a number that does not move.
+**What a reader of the chain can still join**, using nothing but what the calls name. One stated strategy, run over the real records: take a call on one venue, find the calls on the other that name the same handles, guess uniformly among them; where no handle matches, guess uniformly among all of them.
 
-It works only where the same pair has several swaps in flight, and then it works exactly: the success falls to chance, 1/k. That is the honest statement of what this construction protects --- one party's own concurrent traffic, and nothing else. It is not a realistic anonymity set.
+| naming | swaps in flight | between | one transaction | adaptor | chance |
+| --- | ---: | --- | ---: | ---: | ---: |
+| a handle per venue | 1 | distinct | 1.000 | **1.000** | 1.000 |
+| a handle per venue | 2 | distinct | 1.000 | **0.500** | 0.500 |
+| a handle per venue | 4 | distinct | 1.000 | **0.250** | 0.250 |
+| a handle per venue | 8 | distinct | 1.000 | **0.125** | 0.125 |
+| a handle per venue | 16 | distinct | 1.000 | **0.062** | 0.062 |
+| a handle per venue | 1 | one pair | 1.000 | **1.000** | 1.000 |
+| a handle per venue | 2 | one pair | 1.000 | **0.500** | 0.500 |
+| a handle per venue | 4 | one pair | 1.000 | **0.250** | 0.250 |
+| a handle per venue | 8 | one pair | 1.000 | **0.125** | 0.125 |
+| a handle per venue | 16 | one pair | 1.000 | **0.062** | 0.062 |
+| one name everywhere | 1 | distinct | 1.000 | **1.000** | 1.000 |
+| one name everywhere | 2 | distinct | 1.000 | **1.000** | 0.500 |
+| one name everywhere | 4 | distinct | 1.000 | **1.000** | 0.250 |
+| one name everywhere | 8 | distinct | 1.000 | **1.000** | 0.125 |
+| one name everywhere | 16 | distinct | 1.000 | **1.000** | 0.062 |
+| one name everywhere | 1 | one pair | 1.000 | **1.000** | 1.000 |
+| one name everywhere | 2 | one pair | 1.000 | **0.500** | 0.500 |
+| one name everywhere | 4 | one pair | 1.000 | **0.250** | 0.250 |
+| one name everywhere | 8 | one pair | 1.000 | **0.125** | 0.125 |
+| one name everywhere | 16 | one pair | 1.000 | **0.062** | 0.062 |
 
-Two things the table is not. The observer here is given **no timing**: every prepare is placed in one block, so a real observer, watching them arrive, does better than 1/k. And the rails here are account rails. The note ledger of §5 removes the handles that are doing the linking, which is what the adaptor needs to be worth its cost --- but the Rust side has no note-rail DvP, so that combination is argued for and not measured.
+**The privacy of this construction was sitting in a naming convention.** With one identifier at both venues --- which is what a caller reaches for, and what this benchmark did on its first run --- the adaptor buys nothing between distinct parties: a prepare is a transfer, a transfer says who is paying whom, and joining "this firm pays here" to "this firm is paid there" needs no cryptanalysis. Four times the calls for a number that does not move.
 
-**On one chain, use one transaction.** The adaptor's place is across chains, where there is no alternative.
+With a handle derived per venue --- `qomm_zkpi::handles`, one seed and an unrelated point at each venue --- the adaptor delivers exactly what it promises: the observer falls to chance, 1/k, and stays there whether the swaps are between distinct parties or the same pair. Nothing about the cryptography changed between those two blocks of the table. Only the names did.
+
+This is worth stating plainly because the property was written down as prose before it was code, and prose does not hold. The design said handles are derived per venue so that one firm is two unrelated points; the library offered no way to derive them, so the obvious integration was the one that loses. It is code now, and the test that goes with it runs the scheme that suggests itself first --- one secret scaled by a public per-venue factor --- and shows it is publicly linkable.
+
+Two things the table is not. The observer here is given **no timing**: every prepare is placed in one block, so a real observer watching them arrive does better than 1/k. And these are account rails; the note ledger of §5 removes handles altogether, which is a stronger statement than deriving them well, but the Rust side has no note-rail DvP so that combination is argued for and not measured.
+
+This measurement first ran against a version where the property was the caller's to keep. The instruction named two handles and the package named four accounts, and nothing compared them --- so a caller who derived handles per venue and then opened accounts under one name everywhere got the losing row of the table while believing it had the winning one. That is now closed: the four account names are **derived from the two signed handles** (`Sides::of`, one hash of the handle and the rail), `build_package` no longer takes them as an argument, and a package whose accounts disagree with its instruction is rejected before any proof is examined. The per-venue property is enforced where it is used rather than assumed of the caller.
 
 ## 7. What one settlement node can take
 
@@ -268,19 +286,19 @@ A second host with more cores (`host-a`, 64 logical cores) was measured too. Its
 
 ## 8. The Rust port
 
-Measured on the same machine (`host-c` / rustc 1.97.1 (8bab26f4f 2026-07-14) / group ristretto255). The scalar-multiplication calibration is 37.4 us in Rust against 37.3 us in Python, and **this one figure is the only thing that compares across the two languages** --- Python goes through libsodium and Rust through dalek, different implementations of the same thing: a scalar multiplication on a native-code 255-bit curve. That they agree says the two are equally fast and, more usefully, that **the machine was in the same state**, which is what stops the ratios below being explained by the machine.
+Measured on the same machine (`host-c` / rustc 1.97.1 (8bab26f4f 2026-07-14) / group ristretto255). The scalar-multiplication calibration is 35.8 us in Rust against 37.3 us in Python, and **this one figure is the only thing that compares across the two languages** --- Python goes through libsodium and Rust through dalek, different implementations of the same thing: a scalar multiplication on a native-code 255-bit curve. That they agree says the two are equally fast and, more usefully, that **the machine was in the same state**, which is what stops the ratios below being explained by the machine.
 
 What is being compared is not only the language. The port also replaced a hand-rolled bit-decomposition range proof with the audited `bulletproofs` crate, so **the ratios below are 'became Rust' and 'became Bulletproofs' added together**. The order-of-magnitude change on the wire is the second of those: linear became logarithmic.
 
 | balance width | Python settle | Rust settle | ratio | Python package | Rust package | ratio |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 8 bit | 30.4 ± 0.4 (n=15) ms | 2.09 ms | 14.6x | 15,187 B | 2,240 B | 6.8x |
-| 16 bit | 34.8 ± 1.2 (n=15) ms | 2.93 ms | 11.9x | 18,771 B | 2,432 B | 7.7x |
-| 32 bit | 47.5 ± 4.9 (n=15) ms | 4.56 ms | 10.4x | 25,939 B | 2,624 B | 9.9x |
+| 8 bit | 30.4 ± 0.4 (n=15) ms | 2.16 ms | 14.1x | 15,187 B | 2,240 B | 6.8x |
+| 16 bit | 34.8 ± 1.2 (n=15) ms | 3.04 ms | 11.5x | 18,771 B | 2,432 B | 7.7x |
+| 32 bit | 47.5 ± 4.9 (n=15) ms | 4.85 ms | 9.8x | 25,939 B | 2,624 B | 9.9x |
 
-Bulletproofs only comes in powers of two, so a 40-bit rail **rounds up to 64**. Comparing against the rounded-up side is the honest comparison: 48.8 ± 2.0 (n=15) ms for Python at 40 bits against 7.36 ms for Rust at 64, **6.6x**. The package goes from 29,523 to 2,816 B, **10.5x**.
+Bulletproofs only comes in powers of two, so a 40-bit rail **rounds up to 64**. Comparing against the rounded-up side is the honest comparison: 48.8 ± 2.0 (n=15) ms for Python at 40 bits against 7.79 ms for Rust at 64, **6.3x**. The package goes from 29,523 to 2,816 B, **10.5x**.
 
-Per core that is 20.5 to 135.8 settlements per second. Parallelism is independent, so multiply by cores.
+Per core that is 20.5 to 128.5 settlements per second. Parallelism is independent, so multiply by cores.
 
 **Losing the fine grain of the width is a real cost.** A bit decomposition could prove 24 or 40 bits directly, which is what made the per-rail width optimisation of section 2.1 work. With only powers of two, securities at 24 bits round up to 32 and cash at 40 to 64. The conclusion here is that the table above is still a large enough difference to swallow that.
 

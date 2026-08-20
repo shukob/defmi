@@ -9,6 +9,7 @@ use qomm_defmi::ledger::Ledger;
 use qomm_defmi::settlement::*;
 use qomm_zk::pedersen::Pedersen;
 use qomm_zk::range::RangeCtx;
+use qomm_zkpi::handles::Identity;
 use qomm_zkpi::{deal_quorum, frost, Bounds, Issuer, Venue};
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
@@ -41,6 +42,13 @@ struct Row {
     package_bytes: usize,
 }
 
+
+/// The two firms, named as the design says: one seed each, a handle for this
+/// venue, and account names derived from that handle.
+const VENUE: &[u8] = b"defmi:bench";
+fn seller() -> RistrettoPoint { Identity::from_seed([11u8; 32]).handle(VENUE).point }
+fn buyer() -> RistrettoPoint { Identity::from_seed([22u8; 32]).handle(VENUE).point }
+
 fn median(mut xs: Vec<f64>) -> f64 {
     xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     xs[xs.len() / 2]
@@ -71,18 +79,18 @@ fn run(bits: usize, repeats: usize) -> Row {
                             Scalar::random(&mut rng));
         let mut securities = Ledger::new(key.clone(), bits);
         let mut cash = Ledger::new(key.clone(), bits);
-        securities.open(b"sec:seller", asset_key.commit_u64(sec.0, &sec.1));
-        securities.open(b"sec:buyer", asset_key.commit_u64(0, &Scalar::random(&mut rng)));
-        cash.open(b"cash:buyer", key.commit_u64(cash_holding.0, &cash_holding.1));
-        cash.open(b"cash:seller", key.commit_u64(0, &Scalar::random(&mut rng)));
+        securities.open(&account_of(&seller(), SECURITIES_RAIL), asset_key.commit_u64(sec.0, &sec.1));
+        securities.open(&account_of(&buyer(), SECURITIES_RAIL), asset_key.commit_u64(0, &Scalar::random(&mut rng)));
+        cash.open(&account_of(&buyer(), CASH_RAIL), key.commit_u64(cash_holding.0, &cash_holding.1));
+        cash.open(&account_of(&seller(), CASH_RAIL), key.commit_u64(0, &Scalar::random(&mut rng)));
         let venue = Venue::new(key.clone(), &bounds, public.clone());
         let mut defmi = Defmi::new(key.clone(), securities, cash, venue);
 
         let t = Instant::now();
         let (digest, openings, partial) = issuer.build(
             qty, price, 3,
-            RistrettoPoint::mul_base(&Scalar::from(11u64)),
-            RistrettoPoint::mul_base(&Scalar::from(22u64)),
+            buyer(),   // pays cash, receives securities
+            seller(),  // delivers securities, receives cash
             1_500, [nonce as u8; 32], 1_599_845, &mut rng).unwrap();
         let chosen: Vec<_> = shares.keys().take(3).cloned().collect();
         let mut nonces = BTreeMap::new();
@@ -106,10 +114,6 @@ fn run(bits: usize, repeats: usize) -> Row {
         let t = Instant::now();
         let (pkg, _) = build_package(
             &key, instruction, &defmi.securities, &defmi.cash,
-            &Counterparties {
-                securities_from: b"sec:seller", securities_to: b"sec:buyer",
-                cash_from: b"cash:buyer", cash_to: b"cash:seller",
-            },
             qty, price,
             &Holdings {
                 securities_balance: sec.0, securities_blinding: sec.1,

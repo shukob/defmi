@@ -365,6 +365,11 @@ def main() -> int:
     if pvp:
         milli, micro = pvp["milliseconds"], pvp["microseconds"]
         w("## 6. Payment versus payment, across two ledgers\n")
+        if pvp["host"] != d["host"]:
+            w(f"*The two tables in this section were taken on "
+              f"`{label(pvp['host'])}`, not the `{label(d['host'])}` of the rest "
+              "of this document: they are Rust benchmarks and they wanted a "
+              "machine that was not doing anything else.*\n")
         w("DvP moves two legs together because both are on one ledger and one "
           "function decides. Two ledgers that share no state have no such "
           "function, and fair exchange between two parties with no third party "
@@ -422,71 +427,113 @@ def main() -> int:
 
     if same_chain:
         rows = same_chain["rows"]
-        def pick(arm, swaps, parties):
-            return next(r for r in rows if r["arm"] == arm
-                        and r["swaps"] == swaps and r["parties"] == parties)
+        def pick(arm, swaps, parties, naming):
+            return next(r for r in rows if r["arm"] == arm and r["swaps"] == swaps
+                        and r["parties"] == parties and r["naming"] == naming)
         biggest = max(r["swaps"] for r in rows)
+        namings = sorted({r["naming"] for r in rows})
+        per_venue = next(n for n in namings if "per venue" in n)
 
-        w("### 6.1 On one chain, the same construction is a mistake\n")
-        w("Across two chains there is no choice: nothing spans them, so the "
-          "adaptor and its window are the only way. On one chain --- two DeFMI "
-          "deployments, two contract addresses --- there is a choice, and it is "
-          "not the obvious one.\n")
-        w("A single transaction calling both venues gets atomicity from the "
-          "chain for nothing, and the window is zero. But **that transaction is "
-          "the link**. Two transactions with an adaptor keep the two legs "
-          "cryptographically unrelated and pay at least one block. Both cannot "
-          "be had, because being one transaction is what makes it atomic and "
-          "what makes it linkable.\n")
-        w("So the question is what the second arm buys. The prediction, written "
-          "before running it, was: nothing --- the adaptor makes the two "
-          "*claims* unrelated and does nothing about the two *prepares*, which "
-          "name account handles. It is right.\n")
+        w("### 6.1 On one chain, and what the unlinkability actually rests on\n")
+        if same_chain["host"] != d["host"]:
+            w(f"*Taken on `{label(same_chain['host'])}`.*\n")
+        w("Across two chains there is no choice about atomicity: nothing spans "
+          "them, so an adaptor signature and a deadline are the only way. On one "
+          "chain --- two DeFMI deployments, two contract addresses --- there is a "
+          "choice. A single transaction calling both venues gets atomicity from "
+          "the chain for nothing and its exposure window is zero, but that "
+          "transaction is the link. Two transactions with an adaptor keep the "
+          "legs cryptographically unrelated and pay at least one block.\n")
+        w("What the second arm costs is small and flat:\n")
         w(f"| at {biggest} swaps | one transaction | adaptor |")
         w("| --- | ---: | ---: |")
         for row_name, key in (("calls", "calls"),
                               ("state slots written", "slots_written"),
                               ("bytes written", "bytes_written")):
-            one_tx = pick("one transaction", biggest, "distinct")[key]
-            adapt = pick("adaptor", biggest, "distinct")[key]
+            one_tx = pick("one transaction", biggest, "distinct", per_venue)[key]
+            adapt = pick("adaptor", biggest, "distinct", per_venue)[key]
             w(f"| {row_name} | {one_tx} | {adapt} |")
-        one_tx = pick("one transaction", biggest, "distinct")["verify_ms"]
-        adapt = pick("adaptor", biggest, "distinct")["verify_ms"]
+        one_tx = pick("one transaction", biggest, "distinct", per_venue)["verify_ms"]
+        adapt = pick("adaptor", biggest, "distinct", per_venue)["verify_ms"]
         w(f"| verification | {ms(one_tx)} ms | {ms(adapt)} ms |")
         w("| exposure window | none | at least one block |")
         w("")
+        adapt_over_one = []
+        for r in rows:
+            if r["arm"] != "adaptor":
+                continue
+            base = pick("one transaction", r["swaps"], r["parties"], r["naming"])
+            adapt_over_one.append(value(r["verify_ms"]) / value(base["verify_ms"]))
+        lo, hi = min(adapt_over_one), max(adapt_over_one)
+        mid = sorted(adapt_over_one)[len(adapt_over_one) // 2]
+        w(f"Four times the calls and a third more state slots --- holding "
+          f"**fewer bytes** in them, because an escrow entry is smaller than the "
+          f"account update it stands in for --- for "
+          f"**{100 * (mid - 1):.1f}% more verification** "
+          f"(+{100 * (lo - 1):.1f}% to +{100 * (hi - 1):.1f}% across the "
+          "table). The range proofs dominate, and the escrow and the signature "
+          "are a few percent beside them rather than nothing at all: this is a "
+          "difference the earlier run on a loaded machine could not resolve, "
+          "where both arms read 413 ms with a spread ten times the gap.\n")
+        w("What it buys is the question, and the answer turned out to depend on "
+          "something that was not cryptography at all.\n")
         w("**What a reader of the chain can still join**, using nothing but what "
-          "the calls name --- take a call on one venue, find the calls on the "
-          "other that name the same handles, guess uniformly among them:\n")
-        w("| swaps in flight | between | one transaction | adaptor | chance |")
-        w("| ---: | --- | ---: | ---: | ---: |")
-        for parties in ("distinct", "one pair"):
-            for swaps in sorted({r["swaps"] for r in rows}):
-                a = pick("one transaction", swaps, parties)
-                b = pick("adaptor", swaps, parties)
-                w(f"| {swaps} | {parties} parties | {a['observer_success']:.3f} "
-                  f"| **{b['observer_success']:.3f}** | {b['chance']:.3f} |")
+          "the calls name. One stated strategy, run over the real records: take "
+          "a call on one venue, find the calls on the other that name the same "
+          "handles, guess uniformly among them; where no handle matches, guess "
+          "uniformly among all of them.\n")
+        w("| naming | swaps in flight | between | one transaction | adaptor | chance |")
+        w("| --- | ---: | --- | ---: | ---: | ---: |")
+        for naming in namings:
+            for parties in ("distinct", "one pair"):
+                for swaps in sorted({r["swaps"] for r in rows}):
+                    a = pick("one transaction", swaps, parties, naming)
+                    b = pick("adaptor", swaps, parties, naming)
+                    w(f"| {naming} | {swaps} | {parties} | "
+                      f"{a['observer_success']:.3f} | "
+                      f"**{b['observer_success']:.3f}** | {b['chance']:.3f} |")
         w("")
-        w("**Between distinct parties --- which is what a venue with more than "
-          "two users looks like --- the adaptor buys nothing at all.** A prepare "
-          "is a transfer, and a transfer says who is paying whom; joining "
-          "\"Alice pays on one venue\" to \"Alice is paid on the other\" "
-          "needs no cryptanalysis. It costs four times the calls and a third "
-          "more state for a number that does not move.\n")
-        w("It works only where the same pair has several swaps in flight, and "
-          "then it works exactly: the success falls to chance, 1/k. That is the "
-          "honest statement of what this construction protects --- one party's "
-          "own concurrent traffic, and nothing else. It is not a realistic "
-          "anonymity set.\n")
+        w("**The privacy of this construction was sitting in a naming "
+          "convention.** With one identifier at both venues --- which is what a "
+          "caller reaches for, and what this benchmark did on its first run --- "
+          "the adaptor buys nothing between distinct parties: a prepare is a "
+          "transfer, a transfer says who is paying whom, and joining \"this "
+          "firm pays here\" to \"this firm is paid there\" needs no "
+          "cryptanalysis. Four times the calls for a number that does not "
+          "move.\n")
+        w("With a handle derived per venue --- `qomm_zkpi::handles`, one seed and "
+          "an unrelated point at each venue --- the adaptor delivers exactly what "
+          "it promises: the observer falls to chance, 1/k, and stays there "
+          "whether the swaps are between distinct parties or the same pair. "
+          "Nothing about the cryptography changed between those two blocks of "
+          "the table. Only the names did.\n")
+        w("This is worth stating plainly because the property was written down "
+          "as prose before it was code, and prose does not hold. The design said "
+          "handles are derived per venue so that one firm is two unrelated "
+          "points; the library offered no way to derive them, so the obvious "
+          "integration was the one that loses. It is code now, and the test that "
+          "goes with it runs the scheme that suggests itself first --- one secret "
+          "scaled by a public per-venue factor --- and shows it is publicly "
+          "linkable.\n")
         w("Two things the table is not. The observer here is given **no "
-          "timing**: every prepare is placed in one block, so a real observer, "
-          "watching them arrive, does better than 1/k. And the rails here are "
-          "account rails. The note ledger of \u00a75 removes the handles that "
-          "are doing the linking, which is what the adaptor needs to be worth "
-          "its cost --- but the Rust side has no note-rail DvP, so that "
-          "combination is argued for and not measured.\n")
-        w("**On one chain, use one transaction.** The adaptor's place is across "
-          "chains, where there is no alternative.\n")
+          "timing**: every prepare is placed in one block, so a real observer "
+          "watching them arrive does better than 1/k. And these are account "
+          "rails; the note ledger of \u00a75 removes handles altogether, which "
+          "is a stronger statement than deriving them well, but the Rust side "
+          "has no note-rail DvP so that combination is argued for and not "
+          "measured.\n")
+        w("This measurement first ran against a version where the property was "
+          "the caller\'s to keep. The instruction named two handles and the "
+          "package named four accounts, and nothing compared them --- so a "
+          "caller who derived handles per venue and then opened accounts under "
+          "one name everywhere got the losing row of the table while believing "
+          "it had the winning one. That is now closed: the four account names "
+          "are **derived from the two signed handles** (`Sides::of`, one hash "
+          "of the handle and the rail), `build_package` no longer takes them as "
+          "an argument, and a package whose accounts disagree with its "
+          "instruction is rejected before any proof is examined. The per-venue "
+          "property is enforced where it is used rather than assumed of the "
+          "caller.\n")
 
     if d.get("parallel"):
         w("## 7. What one settlement node can take\n")
@@ -536,18 +583,31 @@ def main() -> int:
         w("## 8. The Rust port\n")
         py_cal = value(d.get("calibration", {}).get("scalar_mult_us"))
         rs_cal = value(rust["calibration"].get("scalar_mult_us"))
-        w(f"Measured on the same machine (`{label(rust['host'])}` / "
-          f"{rust['rustc']} / group ristretto255). The scalar-multiplication "
-          "calibration is "
+        # The ratios in this section are cross-language, so they are only a
+        # comparison at all if both sides were taken on one machine. That is a
+        # property of the two artifacts, not of the prose, so it is read from
+        # them: a table that has quietly become cross-host says so instead.
+        same_machine = rust["host"] == d["host"]
+        where = (f"Measured on the same machine (`{label(rust['host'])}` / "
+                 if same_machine else
+                 f"Measured on `{label(rust['host'])}` against Python on "
+                 f"`{label(d['host'])}` / ")
+        w(where + f"{rust['rustc']} / group ristretto255). The "
+          "scalar-multiplication calibration is "
           + (f"{rs_cal:.1f} us in Rust against {py_cal:.1f} us in Python, "
              if py_cal else f"{rs_cal:.1f} us in Rust, ")
           + "and **this one figure is the only thing that compares across the "
             "two languages** --- Python goes through libsodium and Rust through "
             "dalek, different implementations of the same thing: a scalar "
-            "multiplication on a native-code 255-bit curve. That they agree says "
-            "the two are equally fast and, more usefully, that **the machine was "
-            "in the same state**, which is what stops the ratios below being "
-            "explained by the machine.\n")
+            "multiplication on a native-code 255-bit curve. "
+          + ("That they agree says the two are equally fast and, more usefully, "
+             "that **the machine was in the same state**, which is what stops "
+             "the ratios below being explained by the machine.\n"
+             if same_machine else
+             "**These are two different machines**, so the ratios below carry "
+             "the difference between the hosts as well as the difference "
+             "between the languages, and should not be read as a port "
+             "measurement until both sides are retaken together.\n"))
         w("What is being compared is not only the language. The port also "
           "replaced a hand-rolled bit-decomposition range proof with the audited "
           "`bulletproofs` crate, so **the ratios below are 'became Rust' and "

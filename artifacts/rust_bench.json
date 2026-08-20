@@ -5,11 +5,11 @@
   "quantity": 100,
   "price": 99990,
   "repeats": 25,
-  "calibration": {"scalar_mult_us": 37.4026, "range_proof_64bit_ms": 9.1988},
+  "calibration": {"scalar_mult_us": 35.8356, "range_proof_64bit_ms": 8.9108},
   "scaling": [
-    {"bits": 8, "issue_ms": 3.9269, "build_ms": 3.5999, "settle_ms": 2.0860, "package_bytes": 2240, "per_second": 479.38},
-    {"bits": 16, "issue_ms": 6.1057, "build_ms": 5.9148, "settle_ms": 2.9312, "package_bytes": 2432, "per_second": 341.16},
-    {"bits": 32, "issue_ms": 10.4539, "build_ms": 10.3181, "settle_ms": 4.5559, "package_bytes": 2624, "per_second": 219.49},
-    {"bits": 64, "issue_ms": 19.0197, "build_ms": 19.0262, "settle_ms": 7.3628, "package_bytes": 2816, "per_second": 135.82}
+    {"bits": 8, "issue_ms": 3.8772, "build_ms": 3.5315, "settle_ms": 2.1565, "package_bytes": 2240, "per_second": 463.71},
+    {"bits": 16, "issue_ms": 6.0089, "build_ms": 5.7639, "settle_ms": 3.0354, "package_bytes": 2432, "per_second": 329.45},
+    {"bits": 32, "issue_ms": 10.4310, "build_ms": 10.3271, "settle_ms": 4.8488, "package_bytes": 2624, "per_second": 206.24},
+    {"bits": 64, "issue_ms": 19.0243, "build_ms": 18.8186, "settle_ms": 7.7850, "package_bytes": 2816, "per_second": 128.45}
   ]
 }

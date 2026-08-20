@@ -45,8 +45,11 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph one["one ledger: delivery versus payment"]
+        ACC["account = hash(rail, handle)<br/>derived by the venue,<br/>never named by the caller"]
         SEC["securities rail"]
         CASH["cash rail"]
+        ACC --> SEC
+        ACC --> CASH
         SEC --- DVP{"settle"}
         CASH --- DVP
     end

@@ -30,6 +30,7 @@ use qomm_defmi::chain::{Call, ChainState, Delta, Observable};
 use qomm_defmi::ledger::{Ledger, Transfer};
 use qomm_defmi::pvp::Swap;
 use qomm_measure::{hosts, Summary};
+use qomm_zkpi::handles::Identity;
 use qomm_zk::pedersen::Pedersen;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
@@ -94,25 +95,58 @@ impl Venue {
     }
 }
 
-/// One party pair doing one swap.
-struct Pair { a: Vec<u8>, b: Vec<u8>, index: usize }
+/// One party pair doing one swap, with a handle at each venue.
+struct Pair {
+    a_jpy: Vec<u8>, a_usd: Vec<u8>,
+    b_jpy: Vec<u8>, b_usd: Vec<u8>,
+    index: usize,
+}
 
-fn pairs(count: usize, distinct: bool) -> Vec<Pair> {
+/// How a firm is named at a venue --- the choice this whole measurement turns
+/// out to be about.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Naming {
+    /// One identifier everywhere. What a caller reaches for when the library
+    /// offers nothing else, and what the first version of this benchmark did.
+    Shared,
+    /// `qomm_zkpi::handles`: one seed, an unrelated point per venue. What the
+    /// design says, now that it is code.
+    PerVenue,
+}
+
+fn pairs(count: usize, distinct: bool, naming: Naming) -> Vec<Pair> {
     (0..count).map(|i| {
-        // `distinct` decides the only thing that matters to an observer: are
-        // these k swaps between k different pairs of parties, or k swaps
-        // between the same two? The first is what a venue with many users looks
-        // like; the second is the best case the design could hope for.
+        // `distinct` decides whether these are k swaps between k different
+        // pairs of parties or k swaps between the same two. The first is what a
+        // venue with more than two users looks like.
         let who = if distinct { i } else { 0 };
-        Pair { a: format!("party-a-{who}").into_bytes(),
-               b: format!("party-b-{who}").into_bytes(), index: i }
+        match naming {
+            Naming::Shared => {
+                let (a, b) = (format!("party-a-{who}").into_bytes(),
+                              format!("party-b-{who}").into_bytes());
+                Pair { a_jpy: a.clone(), a_usd: a, b_jpy: b.clone(), b_usd: b, index: i }
+            }
+            Naming::PerVenue => {
+                let mut seed_a = [0u8; 32];
+                let mut seed_b = [0u8; 32];
+                seed_a[..8].copy_from_slice(&(who as u64).to_be_bytes());
+                seed_b[..8].copy_from_slice(&(who as u64 + 1 << 32).to_be_bytes());
+                let (fa, fb) = (Identity::from_seed(seed_a), Identity::from_seed(seed_b));
+                Pair {
+                    a_jpy: fa.handle(b"jpy").account(), a_usd: fa.handle(b"usd").account(),
+                    b_jpy: fb.handle(b"jpy").account(), b_usd: fb.handle(b"usd").account(),
+                    index: i,
+                }
+            }
+        }
     }).collect()
 }
 
-fn handles(count: usize, distinct: bool) -> Vec<Vec<u8>> {
+fn banked(count: usize, distinct: bool, naming: Naming, venue: &str) -> Vec<Vec<u8>> {
     let mut all = Vec::new();
-    for p in pairs(count, distinct) {
-        for h in [p.a, p.b] {
+    for p in pairs(count, distinct, naming) {
+        let two = if venue == "jpy" { [p.a_jpy, p.b_jpy] } else { [p.a_usd, p.b_usd] };
+        for h in two {
             if !all.contains(&h) { all.push(h); }
         }
     }
@@ -129,76 +163,80 @@ struct ArmResult {
 fn merge(into: &mut Delta, d: Delta) { into.merge(&d); }
 
 /// Both legs in one call to one transaction that touches both venues.
-fn one_transaction(count: usize, distinct: bool, rng: &mut OsRng) -> ArmResult {
-    let all = handles(count, distinct);
-    let mut yen = Venue::new("jpy", &all, rng);
-    let mut usd = Venue::new("usd", &all, rng);
+fn one_transaction(count: usize, distinct: bool, naming: Naming, rng: &mut OsRng)
+    -> ArmResult {
+    let mut yen = Venue::new("jpy", &banked(count, distinct, naming, "jpy"), rng);
+    let mut usd = Venue::new("usd", &banked(count, distinct, naming, "usd"), rng);
     let mut delta = Delta::default();
     let mut log = Vec::new();
     let mut calls = 0;
 
     let start = Instant::now();
-    for p in pairs(count, distinct) {
-        let ta = yen.transfer(&p.a, &p.b, rng);
-        let tb = usd.transfer(&p.b, &p.a, rng);
-        yen.ledger.check_transfer(&p.a, &ta, b"same-chain", false).unwrap();
-        usd.ledger.check_transfer(&p.b, &tb, b"same-chain", false).unwrap();
-        yen.ledger.apply_transfer(&p.a, &p.b, &ta);
-        usd.ledger.apply_transfer(&p.b, &p.a, &tb);
+    for p in pairs(count, distinct, naming) {
+        let ta = yen.transfer(&p.a_jpy, &p.b_jpy, rng);
+        let tb = usd.transfer(&p.b_usd, &p.a_usd, rng);
+        yen.ledger.check_transfer(&p.a_jpy, &ta, b"same-chain", false).unwrap();
+        usd.ledger.check_transfer(&p.b_usd, &tb, b"same-chain", false).unwrap();
+        yen.ledger.apply_transfer(&p.a_jpy, &p.b_jpy, &ta);
+        usd.ledger.apply_transfer(&p.b_usd, &p.a_usd, &tb);
 
         let mut nullifier = [0u8; 32];
         nullifier[..8].copy_from_slice(&(p.index as u64).to_be_bytes());
         merge(&mut delta, yen.chain.settle(nullifier, 1_000, 1,
-            &[(&p.a, ta.remainder_commitment), (&p.b, ta.amount_commitment)]).unwrap());
+            &[(&p.a_jpy, ta.remainder_commitment),
+              (&p.b_jpy, ta.amount_commitment)]).unwrap());
         merge(&mut delta, usd.chain.settle(nullifier, 1_000, 1,
-            &[(&p.b, tb.remainder_commitment), (&p.a, tb.amount_commitment)]).unwrap());
+            &[(&p.b_usd, tb.remainder_commitment),
+              (&p.a_usd, tb.amount_commitment)]).unwrap());
         calls += 1;
 
         // One transaction, both venues. That is the record an observer reads.
         log.push(Observable {
             block: 0, venue: format!("{}+{}", yen.name, usd.name), call: Call::Settle,
-            handles: vec![p.a.clone(), p.b.clone()], leg: None,
+            handles: vec![p.a_jpy.clone(), p.b_jpy.clone(),
+                          p.a_usd.clone(), p.b_usd.clone()],
+            leg: None,
         });
     }
     ArmResult { calls, delta, verify_ms: start.elapsed().as_secs_f64() * 1e3, log }
 }
 
 /// Two transactions per leg, joined by an adaptor signature.
-fn with_adaptor(count: usize, distinct: bool, rng: &mut OsRng) -> ArmResult {
-    let all = handles(count, distinct);
-    let mut yen = Venue::new("jpy", &all, rng);
-    let mut usd = Venue::new("usd", &all, rng);
+fn with_adaptor(count: usize, distinct: bool, naming: Naming, rng: &mut OsRng)
+    -> ArmResult {
+    let mut yen = Venue::new("jpy", &banked(count, distinct, naming, "jpy"), rng);
+    let mut usd = Venue::new("usd", &banked(count, distinct, naming, "usd"), rng);
     let mut delta = Delta::default();
     let mut log = Vec::new();
     let mut calls = 0;
 
     let start = Instant::now();
-    for p in pairs(count, distinct) {
+    for p in pairs(count, distinct, naming) {
         let (bob, _) = Swap::proposer(rng);
         let mut alice = Swap::responder(bob.adaptor_point);
         let (leg_a, leg_b) = (format!("A{}", p.index).into_bytes(),
                               format!("B{}", p.index).into_bytes());
 
-        let ta = yen.transfer(&p.a, &p.b, rng);
-        let tb = usd.transfer(&p.b, &p.a, rng);
-        let la = alice.prepare(&mut yen.ledger, &leg_a, &p.a, &p.b,
+        let ta = yen.transfer(&p.a_jpy, &p.b_jpy, rng);
+        let tb = usd.transfer(&p.b_usd, &p.a_usd, rng);
+        let la = alice.prepare(&mut yen.ledger, &leg_a, &p.a_jpy, &p.b_jpy,
                                &Scalar::random(rng), &ta, b"same-chain",
                                false, 100, rng).unwrap();
-        let lb = bob.prepare(&mut usd.ledger, &leg_b, &p.b, &p.a,
+        let lb = bob.prepare(&mut usd.ledger, &leg_b, &p.b_usd, &p.a_usd,
                              &Scalar::random(rng), &tb, b"same-chain",
                              false, 160, rng).unwrap();
-        merge(&mut delta, yen.chain.prepare(&leg_a, &p.a, &p.b,
+        merge(&mut delta, yen.chain.prepare(&leg_a, &p.a_jpy, &p.b_jpy,
             ta.remainder_commitment, ta.amount_commitment).unwrap());
-        merge(&mut delta, usd.chain.prepare(&leg_b, &p.b, &p.a,
+        merge(&mut delta, usd.chain.prepare(&leg_b, &p.b_usd, &p.a_usd,
             tb.remainder_commitment, tb.amount_commitment).unwrap());
 
         // A prepare names both parties: it is a transfer, and a transfer says
         // who is paying whom. Nothing about the adaptor changes that.
         log.push(Observable { block: 0, venue: yen.name.clone(), call: Call::Prepare,
-                              handles: vec![p.a.clone(), p.b.clone()],
+                              handles: vec![p.a_jpy.clone(), p.b_jpy.clone()],
                               leg: Some(leg_a.clone()) });
         log.push(Observable { block: 0, venue: usd.name.clone(), call: Call::Prepare,
-                              handles: vec![p.b.clone(), p.a.clone()],
+                              handles: vec![p.b_usd.clone(), p.a_usd.clone()],
                               leg: Some(leg_b.clone()) });
 
         let published = bob.claim(&mut yen.ledger, &la, 90).unwrap();
@@ -222,9 +260,12 @@ fn with_adaptor(count: usize, distinct: bool, rng: &mut OsRng) -> ArmResult {
 ///
 /// One stated strategy, run over the real records rather than reasoned about:
 /// take every call on the first venue, find the calls on the second venue that
-/// name the same two handles, and guess uniformly among them. A call that names
-/// no handle offers this strategy nothing.
-fn observer_success(log: &[Observable], count: usize) -> f64 {
+/// name the same handles, and guess uniformly among them. **When no handle
+/// matches, the observer does not give up --- it guesses uniformly among every
+/// call of the same kind on the other venue.** An earlier version scored that
+/// case as zero, which reads as "never succeeds" and is wrong: an observer
+/// always has a guess, and the floor is chance, not nothing.
+fn observer_success(log: &[Observable]) -> f64 {
     let mut total = 0.0;
     let mut scored = 0usize;
     for (i, entry) in log.iter().enumerate() {
@@ -235,24 +276,26 @@ fn observer_success(log: &[Observable], count: usize) -> f64 {
             scored += 1;
             continue;
         }
-        if entry.handles.is_empty() || entry.venue != "jpy" {
+        if entry.venue != "jpy" || entry.call != Call::Prepare {
             continue;
         }
-        let mine: Vec<&Vec<u8>> = entry.handles.iter().collect();
-        let candidates: Vec<usize> = log.iter().enumerate()
-            .filter(|(j, other)| *j != i && other.venue == "usd"
-                    && other.call == entry.call
-                    && other.handles.len() == mine.len()
-                    && mine.iter().all(|h| other.handles.contains(h)))
+        let across: Vec<usize> = log.iter().enumerate()
+            .filter(|(j, o)| *j != i && o.venue == "usd" && o.call == entry.call)
             .map(|(j, _)| j)
             .collect();
-        if candidates.is_empty() { continue; }
-        // The true partner is the entry for the same swap. Uniform among the
-        // candidates is the best this strategy can do.
+        if across.is_empty() { continue; }
+        let by_handle: Vec<usize> = across.iter().copied()
+            .filter(|j| {
+                let o = &log[*j];
+                !entry.handles.is_empty()
+                    && o.handles.len() == entry.handles.len()
+                    && entry.handles.iter().all(|h| o.handles.contains(h))
+            })
+            .collect();
+        let candidates = if by_handle.is_empty() { across } else { by_handle };
         total += 1.0 / candidates.len() as f64;
         scored += 1;
     }
-    let _ = count;
     if scored == 0 { 0.0 } else { total / scored as f64 }
 }
 
@@ -263,36 +306,40 @@ fn main() {
         .and_then(|v| v.parse().ok()).unwrap_or(5);
 
     println!("two DeFMI deployments on one chain, {BITS}-bit rails\n");
-    println!("{:<12} {:>6} {:>7} {:>6} {:>9} {:>9} {:>13} {:>13}",
-             "arm", "swaps", "parties", "calls", "slots wr", "bytes wr",
-             "verify ms", "observer");
+    println!("{:<16} {:<19} {:<9} {:>3} {:>6} {:>7} {:>22} {:>9}",
+             "arm", "naming", "parties", "k", "calls", "slots", "verify ms", "observer");
     let mut rows = Vec::new();
 
+    type Arm = fn(usize, bool, Naming, &mut OsRng) -> ArmResult;
+    for (naming, naming_name) in [(Naming::Shared, "one name everywhere"),
+                                  (Naming::PerVenue, "a handle per venue")] {
     for distinct in [true, false] {
         for count in counts {
-            for (name, run) in [("one transaction", one_transaction as fn(usize, bool, &mut OsRng) -> ArmResult),
+            for (name, run) in [("one transaction", one_transaction as Arm),
                                 ("adaptor", with_adaptor)] {
                 let mut times = Vec::new();
                 let mut last: Option<ArmResult> = None;
                 for _ in 0..repeats {
-                    let r = run(count, distinct, &mut rng);
+                    let r = run(count, distinct, naming, &mut rng);
                     times.push(r.verify_ms);
                     last = Some(r);
                 }
                 let r = last.unwrap();
                 let t = Summary::of(&times).unwrap();
-                let success = observer_success(&r.log, count);
-                println!("{:<12} {:>6} {:>7} {:>6} {:>9} {:>9} {:>13} {:>12.3}",
-                         name, count, if distinct { "distinct" } else { "one pair" },
-                         r.calls, r.delta.slots_written, r.delta.bytes_written,
-                         format!("{t}"), success);
+                let success = observer_success(&r.log);
+                println!("{:<16} {:<19} {:<9} {:>3} {:>6} {:>7} {:>22} {:>9.3}",
+                         name, naming_name,
+                         if distinct { "distinct" } else { "one pair" }, count,
+                         r.calls, r.delta.slots_written, format!("{t}"), success);
                 rows.push(format!(
-                    "    {{\"arm\": \"{}\", \"swaps\": {}, \"parties\": \"{}\", \
+                    "    {{\"arm\": \"{}\", \"naming\": \"{}\", \"swaps\": {}, \
+                     \"parties\": \"{}\", \
                      \"calls\": {}, \"slots_written\": {}, \"bytes_written\": {}, \
                      \"verify_ms\": {{\"n\": {}, \"mean\": {:.4}, \"sd\": {}, \
                      \"median\": {:.4}}}, \"observer_success\": {:.4}, \
                      \"chance\": {:.4}}}",
-                    name, count, if distinct { "distinct" } else { "one pair" },
+                    name, naming_name, count,
+                    if distinct { "distinct" } else { "one pair" },
                     r.calls, r.delta.slots_written, r.delta.bytes_written,
                     t.n, t.mean,
                     t.sd.map_or("null".into(), |v| format!("{v:.4}")), t.median,
@@ -300,6 +347,7 @@ fn main() {
             }
         }
         println!();
+    }
     }
 
     println!("`observer` is the chance a reader of the chain names the partner leg,");

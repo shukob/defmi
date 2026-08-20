@@ -14,6 +14,7 @@
 //! point addition there costs a quarter of a scalar multiplication, so batching
 //! made verification slower.
 
+use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
 use qomm_zk::pedersen::Pedersen;
@@ -23,6 +24,7 @@ use qomm_zk::sigma::{
 };
 use qomm_zkpi::{Instruction, Venue};
 use rand_core::{CryptoRng, RngCore};
+use sha2::{Digest, Sha256};
 
 use crate::assets::BlindedTag;
 use crate::ledger::{Ledger, Transfer};
@@ -63,11 +65,56 @@ pub struct Carry {
     pub cash_blinding: Scalar,
 }
 
-pub struct Counterparties<'a> {
-    pub securities_from: &'a [u8],
-    pub securities_to: &'a [u8],
-    pub cash_from: &'a [u8],
-    pub cash_to: &'a [u8],
+/// The account name a rail keeps a party's balance under.
+///
+/// Derived from the handle the instruction names, so the two cannot disagree.
+/// They used to be unrelated --- an instruction named two group elements and a
+/// package named four byte strings, and nothing checked that the account a leg
+/// settled from was the party the instruction said. That was not theft, since a
+/// payer spends its own balance either way, but it left the whole per-venue
+/// handle property living in whatever a caller happened to pass rather than in
+/// anything the venue verified. Measuring a cross-venue exchange showed what
+/// that costs: with one identifier reused, an observer joins the two legs of an
+/// exchange with certainty.
+///
+/// The rail goes into the derivation so that a rail's account names are its own.
+/// Both rails of one venue settle in the same call, so this buys no
+/// unlinkability there; it costs nothing and keeps a handle from being a key in
+/// two maps at once.
+pub fn account_of(handle: &RistrettoPoint, rail: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"QOMM:DEFMI:ACCOUNT:v1");
+    hasher.update((rail.len() as u64).to_be_bytes());
+    hasher.update(rail);
+    hasher.update(handle.compress().as_bytes());
+    hasher.finalize().to_vec()
+}
+
+pub const SECURITIES_RAIL: &[u8] = b"securities";
+pub const CASH_RAIL: &[u8] = b"cash";
+
+/// Where a DvP moves value, as the instruction fixes it. The securities go the
+/// other way from the cash, which is what makes it a delivery *versus* payment.
+pub struct Sides {
+    pub securities_from: Vec<u8>,
+    pub securities_to: Vec<u8>,
+    pub cash_from: Vec<u8>,
+    pub cash_to: Vec<u8>,
+}
+
+impl Sides {
+    /// The only way to name the four accounts. There is no constructor that
+    /// takes them, so a package cannot be built that names accounts the
+    /// instruction does not.
+    pub fn of(instruction: &Instruction) -> Sides {
+        Sides {
+            // the payee of cash delivers the securities
+            securities_from: account_of(&instruction.payee_handle, SECURITIES_RAIL),
+            securities_to: account_of(&instruction.payer_handle, SECURITIES_RAIL),
+            cash_from: account_of(&instruction.payer_handle, CASH_RAIL),
+            cash_to: account_of(&instruction.payee_handle, CASH_RAIL),
+        }
+    }
 }
 
 pub struct Holdings {
@@ -85,7 +132,7 @@ pub struct InstructionOpenings {
 #[allow(clippy::too_many_arguments)]
 pub fn build_package<R: RngCore + CryptoRng>(
     key: &Pedersen, instruction: Instruction,
-    securities: &Ledger, cash: &Ledger, who: &Counterparties,
+    securities: &Ledger, cash: &Ledger,
     quantity: u64, price: u64, holdings: &Holdings,
     openings: &InstructionOpenings,
     securities_tag: Option<&BlindedTag>, securities_gamma: &Scalar,
@@ -117,6 +164,7 @@ pub fn build_package<R: RngCore + CryptoRng>(
         &Scalar::from(quantity), &openings.amount,
         &cash_secrets.amount_blinding, rng);
 
+    let who = Sides::of(&instruction);
     let carry = Carry {
         securities_balance: holdings.securities_balance - quantity,
         securities_blinding: securities_secrets.remainder_blinding,
@@ -126,10 +174,10 @@ pub fn build_package<R: RngCore + CryptoRng>(
     Ok((
         DvpPackage {
             instruction,
-            securities_from: who.securities_from.to_vec(),
-            securities_to: who.securities_to.to_vec(),
-            cash_from: who.cash_from.to_vec(),
-            cash_to: who.cash_to.to_vec(),
+            securities_from: who.securities_from,
+            securities_to: who.securities_to,
+            cash_from: who.cash_from,
+            cash_to: who.cash_to,
             securities_leg, cash_leg, quantity_link, value_proof,
         },
         carry,
@@ -155,6 +203,19 @@ impl Defmi {
         &self, package: &DvpPackage, now: u64, rng: &mut R,
     ) -> Result<(), &'static str> {
         self.venue.verify(&package.instruction, now)?;
+
+        // The four accounts are a function of the two handles the quorum
+        // signed. A package that names anything else is refused before any
+        // proof is looked at --- it is cheaper than a proof and it is the check
+        // that makes the handles mean something.
+        let who = Sides::of(&package.instruction);
+        if package.securities_from != who.securities_from
+            || package.securities_to != who.securities_to
+            || package.cash_from != who.cash_from
+            || package.cash_to != who.cash_to
+        {
+            return Err("the package names accounts the instruction does not");
+        }
 
         for (handle, ledger) in [
             (&package.securities_from, &self.securities),
