@@ -400,7 +400,110 @@ part of this document should be read as saying it does.
 
 ---
 
-## 5. Where to go, and in what order
+## 5. Where the nodes sit, and whose law they sit under
+
+A measurement decides the shape here, so it comes first. A committee of seven
+cannot span regions: at 120 ms one way --- Tokyo to Zurich --- a single distant
+node takes one quote from 0.517 s to 23.0 s, and costs 86% of what moving all
+seven costs (`DEPLOYMENT.md` section 0.1). **Geographic independence cannot be
+bought inside a committee.** Either the seven sit together or the system does
+not quote.
+
+That is a security parameter being set by a latency measurement, which is worth
+saying out loud rather than absorbing. It has an answer, but the answer is
+different in each tier and the two should be written down as different.
+
+### 5.1 Two tiers, two adversaries
+
+**A regional committee defends against market participants.** Seven operators
+supervised by one authority still defeat a competing market maker, a curious
+node operator and two colluding nodes --- which is the whole of what the design
+is for. What it does not defeat is the jurisdiction itself: one legal order can
+reach all seven.
+
+**It does not have to.** The authority that licenses the venue can already
+compel the records through selective disclosure (section 4). **There is nothing
+to gain by hiding from the regulator that authorised you**, and the sixteen
+market makers, against whom T=2 is exactly as strong as it ever was, are the
+adversary the confidentiality exists for.
+
+**Crossing regions is a settlement problem.** Two ledgers that share no state
+settle through an adaptor signature and a deadline, whose cryptography costs
+0.06 ms and whose exposure is the two ledgers' finality (`DEFMI.md` section 6).
+That is not round-bound, so it crosses an ocean where seventy rounds cannot.
+Its adversary is different again: no single legal order holding both halves.
+
+A market maker quoting an instrument outside its own region does not need a
+committee spanning both. Policy registration and quote computation are already
+separate, so **the rule crosses once, offline, where latency does not matter**,
+and quotes are computed locally against it from then on.
+
+### 5.2 Route by instrument, because the register decides the law
+
+If the counterparties decide which committee handles a request, the routing
+leaks: taking the cross-region path says the trade is cross-border. If the
+**instrument** decides, nothing leaks --- and the instrument is already what
+fixes the applicable register under N2. A Swiss ledger-based security prices on
+the Swiss committee and settles on the Swiss ledger whoever is asking.
+
+**The legal answer and the privacy answer are the same answer**, which is rare
+enough to be worth taking.
+
+It also makes section 8's table mean something. A slot receipt signed by seven
+nodes under one legal order is evidence in that legal order. Signed across five,
+it carries five different evidentiary weights and there is no forum in which all
+of it counts at once. Putting the committee where settlement happens is what
+makes the audit trail admissible where it is needed.
+
+### 5.3 What this costs, and what it does not
+
+**The cost to name.** A market maker quoting a Japanese instrument accepts that
+a committee under Japanese supervision holds shares of its pricing rule. No
+single node learns the rule; the set is reachable by one authority. **This is
+the constraint that will bound adoption in practice**, ahead of any statute in
+section 3.
+
+**What it does not cost is operators.** One operator running a node in several
+regional committees is still one of seven in each, so independence within a
+committee is untouched. Seven to ten operators globally suffice; seven per
+region are not needed. The rule to hold is narrower: **a cross-region
+arrangement must not draw its operators from any single regional committee.**
+
+### 5.4 On a pure crypto rail the argument inverts
+
+Read as a crypto system rather than under the statutes above, the settlement
+side gets easier and the compute side gets harder.
+
+Easier: N2 is free. The chain is the record because no competing register
+exists, so the settlement layer is authoritative rather than a mirror --- the
+one thing only Switzerland legislates. And with both legs on one ledger, DvP is
+available at all, which across two ledgers it is not. What that costs is
+measured: a single transaction has no exposure window but **is** the link
+between the legs, while an adaptor keeps the legs unrelated for one block and
+3.4% more verification (`DEFMI.md` section 6.1).
+
+Harder, and this is the part that gets skipped. **The chain gives the record
+without the enforcement.** A Swiss ledger entry is the right and a court will
+enforce it; a chain entry is the record and nothing off-chain must honour it.
+The security-token statutes of section 3 exist precisely to buy that missing
+half, which makes the crypto reading not an alternative to the legal one but
+the same architecture with the enforcement layer removed. The same distinction
+runs through the cash leg: **finality of the transfer is not finality of the
+claim** --- a stablecoin transfer is final on the ledger while the claim stays
+with its issuer, so section 2.6's ordering survives tokenisation unchanged.
+
+And the committee argument of section 5.1 does not carry over. With no
+authorising supervisor there is no lawful-access channel substituting for
+geographic spread, so T=2 falls back on organisational independence alone --- on
+the rail where an adversary funded to extract value from order flow is most
+plainly present, and where spread now costs 44x. The routing argument fails too:
+one metro reaches any chain, so the committee boundary stops coinciding with the
+settlement boundary, and what decides the committee becomes an operator rather
+than a register.
+
+---
+
+## 6. Where to go, and in what order
 
 Not one country --- a sequence, because the three needs peak in different places.
 
@@ -421,7 +524,7 @@ Not one country --- a sequence, because the three needs peak in different places
 
 ---
 
-## 6. Who is responsible for what
+## 7. Who is responsible for what
 
 | Party | Secrets held | Operational requirement | Evidence produced | Owns on failure |
 |---|---|---|---|---|
@@ -434,7 +537,7 @@ Not one country --- a sequence, because the three needs peak in different places
 
 ---
 
-## 7. Which evidence discharges which obligation
+## 8. Which evidence discharges which obligation
 
 | What the protocol emits | What it is good for | What it is not |
 |---|---|---|
@@ -447,7 +550,7 @@ Not one country --- a sequence, because the three needs peak in different places
 
 ---
 
-## 8. What may and may not be claimed
+## 9. What may and may not be claimed
 
 **May**
 
