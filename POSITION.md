@@ -431,16 +431,65 @@ bank's existing pipeline.
 
 ## 9. What would make this a cryptography paper
 
-One question, and it is none of the above.
+Nothing above is a cryptographic result. Four questions are, and they are ranked
+by whether anybody has an answer rather than by how interesting they sound.
 
-The tournament is comparisons; comparisons over a prime field need either bit
+### 9.1 A publicly verifiable linearly homomorphic commitment over `F_p` that opens more than once
+
+**This is the sharpest of the four and it is the one this repository's own
+measurements point at.**
+
+VOLE-in-the-Head commitments are **one-time**: `Delta` becomes public at the
+first opening and binding is gone. Baum and Zok formalise this and buy a second
+opening by committing to the opening in the random oracle, which works when the
+openings can be queued *before* `Delta` is revealed.
+
+**An RFQ cannot queue them.** The coefficients of each quote's check are derived
+from the request, and the request has not arrived yet. So a maker's policy would
+need a fresh commitment per quote --- and **that destroys the property the
+commitment existed for**, because a maker free to re-commit each time is free to
+quote a different policy each time.
+
+The escape that exists is lattice: BDLOP commitments are ordinary computationally
+binding commitments and reopen freely, which is why Rivinius et al. chose them.
+So the design space today is:
+
+| | assumption | openings | size |
+|---|---|---|---|
+| Pedersen | discrete log | many | 32 B, smallest |
+| BDLOP lattice | SIS | many | kilobytes |
+| VOLE-in-the-Head | **random oracle only** | **one** | 2,672 B commitment, 45,616 B proof (measured) |
+
+**The open question is the missing row: random-oracle-only, many openings.**
+That is a primitive question, it has an application that forces it, and it is not
+answered by anything read here.
+
+### 9.2 Comparison without slack, in a field that also has to hold a group order
+
+The tournament is comparisons; comparisons over a prime field need bit
 decomposition or slack; slack forces the field wider; a wider field costs traffic
 on every quote forever. **Rabbit** (FC 2021) removes the slack using the
-commutativity of addition over rings, and **Prime Match** gets a two-round
-malicious comparison with no preprocessing at all. Neither is stated for
-seven-party Shamir with a commitment scheme that has to agree with the field.
+commutativity of addition over rings. **Prime Match** gets a two-round malicious
+comparison with no preprocessing at all. Neither is stated for seven-party Shamir
+with a commitment scheme that has to agree with the field, and whether Prime
+Match's two-party construction survives the move is not obvious.
 
-A construction that keeps the commitment field and the MPC field the same
-*without* the round count or the proof size exploding the way section 6 measured
-would be a result. Everything else here is engineering and measurement, which is
-what it is for.
+### 9.3 Public accountability in an honest majority, priced
+
+Rivinius et al. measured it in a dishonest majority: 11x to 20x. **The
+honest-majority number does not appear to exist.** And there is a specific reason
+to think it is much smaller here: the commitment machinery that makes the output
+publicly verifiable is already deployed, and the malicious check is a linear
+statement over committed shares, so the auditor who can replay the computation
+may be able to replay the check and see whose contribution does not match.
+**That is a hypothesis, not a result**, and what would falsify it is the check
+turning out not to expose per-party contributions.
+
+### 9.4 Robust reconstruction is not open, it is unbuilt
+
+`ACCOUNTABILITY.md` section 3.6: at `n = 7`, `t = 2` the shares are `RS[7,3]`
+with distance 5, so Berlekamp--Welch corrects `T = 2` errors and names the
+senders, locally. The costs are collecting `n` shares instead of `2t+1` (40% more
+opening traffic) and the fact that unreduced products are `RS[7,5]` and correct
+only one error. **This is engineering, and it is the cheapest thing on this
+page.**
