@@ -16,6 +16,9 @@ LABELS = {
     "host-b": "host-b",             # 20 vCPU, RAM 62 GB, x86_64
     "host-b": "host-b",
     "host-c": "host-c",   # 14-inch laptop
+    "host-d": "host-d",       # 16 vCPU, RAM 31 GB, x86_64, WSL2
+    "host-d": "host-d",
+    "host-d": "host-d",
 }
 
 
