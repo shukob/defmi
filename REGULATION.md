@@ -420,10 +420,22 @@ precisely defined (`DEPLOYMENT.md` section 0.2, on crypto, which is the harshest
 case; instruments that move less make it cheaper still).
 
 So jurisdictional independence for T=2 is **available and purchasable**, not
-foreclosed by physics. What it forecloses is continuous quoting: a stream that
-refreshes every 26 s is not a stream. The choice is therefore per instrument,
-and the two settings do not defend against the same adversary, so both should be
-written down rather than one being assumed.
+foreclosed by physics. Continuous quoting is not foreclosed either: a taker on a
+26 s stream acts on a price 13 s old on average and waits for nothing, where a
+taker on a 26 s request-for-quote waits the full 26 s for a price just as old.
+What a slow stream costs falls on the maker, who widens by about the drift.
+
+**And the drift need not be paid at all.** The quote is affine in the reference
+price and the winner does not depend on it, so a slow committee can run against
+the reference that was current when it started and have the revealed price
+corrected afterwards for free (`DEPLOYMENT.md` section 0.4). That is a property
+the design has rather than one the implementation currently uses, but it is the
+difference between a wide-area deployment being a compromise and being a
+configuration.
+
+The choice is therefore per instrument, and the two settings do not defend
+against the same adversary, so both should be written down rather than one being
+assumed.
 
 ### 5.1 Two tiers, two adversaries
 
