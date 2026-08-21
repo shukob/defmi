@@ -233,3 +233,50 @@ fn the_state_root_is_a_function_of_what_the_ledger_holds() {
     c.ledger.add(extra);
     assert_ne!(before, c.ledger.snapshot(), "one more note did not move the root");
 }
+
+/// The account rail got issuance control first and the note rail had none, so
+/// any caller could mint a note and the pool's conservation was conservation
+/// after admission there too.
+#[test]
+fn a_note_ledger_under_an_issuer_refuses_an_unsigned_note() {
+    use ed25519_dalek::{Signer, SigningKey};
+    use qomm_defmi::notes::note_issuance_body;
+
+    let mut rng = OsRng;
+    let key = Pedersen::new(b"qomm:defmi:v1");
+    let issuer = SigningKey::generate(&mut rng);
+    let asset_key = key.with_value_generator(AssetRegistry::new(key.clone(), 16).tags[3]);
+    let mut ledger = NoteLedger::new(key.clone(), BITS).under_issuer(issuer.verifying_key());
+
+    let owner = Wallet::new(&mut rng);
+    let blinding = Scalar::random(&mut rng);
+    let note = ledger.build_note(&owner.address, 1_000,
+                                 asset_key.commit_u64(1_000, &blinding), &blinding,
+                                 &mut rng);
+    let body = note_issuance_body(&ledger.commitment_of(&note), b"n1");
+
+    let elsewhere = SigningKey::generate(&mut rng);
+    assert_eq!(ledger.add_issued(note.clone(), b"n1", &elsewhere.sign(&body)),
+               Err("the note is not signed by the issuer"));
+
+    let signature = issuer.sign(&body);
+    assert!(ledger.add_issued(note.clone(), b"n1", &signature).is_ok());
+    assert_eq!(ledger.add_issued(note, b"n1", &signature),
+               Err("that issuance authorisation was already used"));
+}
+
+#[test]
+#[should_panic(expected = "use add_issued")]
+fn the_unchecked_append_is_closed_once_a_note_ledger_has_an_issuer() {
+    use ed25519_dalek::SigningKey;
+    let mut rng = OsRng;
+    let key = Pedersen::new(b"qomm:defmi:v1");
+    let issuer = SigningKey::generate(&mut rng);
+    let asset_key = key.with_value_generator(AssetRegistry::new(key.clone(), 16).tags[3]);
+    let mut ledger = NoteLedger::new(key.clone(), BITS).under_issuer(issuer.verifying_key());
+    let owner = Wallet::new(&mut rng);
+    let blinding = Scalar::random(&mut rng);
+    let note = ledger.build_note(&owner.address, 1, asset_key.commit_u64(1, &blinding),
+                                 &blinding, &mut rng);
+    ledger.add(note);
+}

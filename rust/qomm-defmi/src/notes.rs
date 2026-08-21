@@ -14,6 +14,7 @@
 //! every time and making double spending free.
 
 use bulletproofs::{BulletproofGens, PedersenGens, RangeProof};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT as G;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
@@ -106,6 +107,19 @@ pub struct NoteLedger {
     spent: HashSet<[u8; 32]>,
     /// The state root, kept rather than recomputed. See `snapshot`.
     rolling: sha2::Sha256,
+    /// Who may create notes. `None` accepts any `add` and says so.
+    issuer: Option<VerifyingKey>,
+    issued: std::collections::BTreeSet<Vec<u8>>,
+}
+
+/// What an issuer signs to let one note exist.
+pub fn note_issuance_body(commitment: &RistrettoPoint, nonce: &[u8]) -> Vec<u8> {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"QOMM:DEFMI:NOTE-ISSUE:v1");
+    hasher.update(commitment.compress().as_bytes());
+    hasher.update((nonce.len() as u64).to_be_bytes());
+    hasher.update(nonce);
+    hasher.finalize().to_vec()
 }
 
 impl NoteLedger {
@@ -113,7 +127,8 @@ impl NoteLedger {
         let mut rolling = sha2::Sha256::new();
         rolling.update(b"QOMM:DEFMI:NOTES:v1");
         NoteLedger { gens: BulletproofGens::new(bits, 2), key, bits,
-                     notes: Vec::new(), spent: HashSet::new(), rolling }
+                     notes: Vec::new(), spent: HashSet::new(), rolling,
+                     issuer: None, issued: std::collections::BTreeSet::new() }
     }
 
     fn masks(&self, shared: &Scalar) -> (Scalar, Scalar) {
@@ -151,10 +166,47 @@ impl NoteLedger {
         note.one_time + note.value_commitment
     }
 
+    /// Append a note without asking where it came from.
+    ///
+    /// `apply_spend` uses this for the outputs of a spend, which are balanced
+    /// against the note that funded them and therefore create nothing. Calling
+    /// it directly is issuance, and a ledger under an issuer refuses it --- see
+    /// `add_issued`.
     pub fn add(&mut self, note: Note) -> usize {
+        assert!(self.issuer.is_none(),
+                "this ledger has an issuer; use add_issued");
+        self.append(note)
+    }
+
+    fn append(&mut self, note: Note) -> usize {
         self.rolling.update(self.commitment_of(&note).compress().as_bytes());
         self.notes.push(note);
         self.notes.len() - 1
+    }
+
+    /// Append a note an issuer put its name to.
+    ///
+    /// The account rail got this first; the note rail had nothing, so any
+    /// caller could mint a note and the pool's conservation was conservation
+    /// after admission there too. Same shape: a signature over the note's
+    /// commitment and a nonce, and a nonce is spent once.
+    pub fn add_issued(&mut self, note: Note, nonce: &[u8],
+                      authorisation: &Signature) -> Result<usize, &'static str> {
+        let issuer = self.issuer.as_ref().ok_or("this ledger has no issuer")?;
+        let body = note_issuance_body(&self.commitment_of(&note), nonce);
+        if self.issued.contains(&body) {
+            return Err("that issuance authorisation was already used");
+        }
+        issuer.verify_strict(&body, authorisation)
+            .map_err(|_| "the note is not signed by the issuer")?;
+        self.issued.insert(body);
+        Ok(self.append(note))
+    }
+
+    /// A ledger where notes can only come from one place.
+    pub fn under_issuer(mut self, issuer: VerifyingKey) -> Self {
+        self.issuer = Some(issuer);
+        self
     }
 
     /// One scalar multiplication per note; no trial decryption of amounts.
@@ -332,7 +384,8 @@ impl NoteLedger {
         self.rolling.update(b"s");
         self.rolling.update(key);
         // spent notes stay in the pool: removing them would say which one went
-        for note in notes { self.add(note); }
+        // balanced against the note that funded them, so not issuance
+        for note in notes { self.append(note); }
         Ok(())
     }
 
