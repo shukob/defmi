@@ -56,6 +56,7 @@ the six measured it.
 |---|---|---|
 | **Rivinius 2022** | public verifiability **+ accountability + robustness** | **11x to 20x** the online phase against plain SPDZ; 17.48 MiB against 3.61 |
 | **here** | public verifiability | **1.07x** wall clock, **2.00x** traffic, **1.00x** rounds |
+| **Goyal–Song–Zhu 2020** | robustness alone, at `t < n/3` | **5.5 to 7.5** elements per party per multiplication --- *less than the 8.0 this stack's online phase already spends* |
 
 **The gap is not a result about who built it better.** It is where the audit
 attaches. Rivinius commits to every share of every wire, so the commitment
@@ -63,7 +64,9 @@ scheme is inside the multiplication. Here the commitment is to a maker's
 *policy*, and one proof afterwards shows the mechanism was applied to it, so
 the MPC only has to run in a wider field --- which is `2.00x` traffic and
 nothing else. **Their construction also delivers blame and robustness; this one
-delivers neither.** Both halves belong in the comparison.
+delivers neither.** Both halves belong in the comparison --- though the third row
+says the robustness half is an unbuilt saving rather than a design limit, and
+`ACCOUNTABILITY.md` is why.
 
 ---
 
@@ -398,8 +401,17 @@ bank's existing pipeline.
 
 - **No formal threat model.** The "security proof: none" cell is not a rhetorical
   concession. There is no theorem here.
-- **No accountability and no robustness.** Section 4 has both; this has neither.
-  The quote proof shows the winner was right, not who broke it if it was not.
+- **No accountability.** Section 4 has it; this does not. The quote proof shows
+  the winner was right, not who broke it if it was not, and the only measured
+  price for the full package is Rivinius et al.'s 11x to 20x in a harder regime.
+  `ACCOUNTABILITY.md` has the ladder and where each mechanism here sits on it.
+- **No robustness --- but this one is an unbuilt saving rather than a gap.**
+  `T = 2` of 7 is `t < n/3`, the regime where Goyal--Song--Zhu's guaranteed output
+  delivery needs no broadcast channel, at 5.5 to 7.5 field elements per party per
+  multiplication. Measured here, `malicious-shamir-party.x` spends **8.0 online
+  and 48.2 in a single-phase run**, so GSZ's total is cheaper than this stack's
+  online phase alone while giving strictly more. **The reason there is no
+  robustness is the engine, not the setting.**
 - **The differential-privacy noise is generated outside the MPC**, so the
   published quote is noised but not *provably* noised.
 - **Selective disclosure is unimplemented.** The design says which fields a
