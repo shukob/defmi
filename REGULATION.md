@@ -402,16 +402,28 @@ part of this document should be read as saying it does.
 
 ## 5. Where the nodes sit, and whose law they sit under
 
-A measurement decides the shape here, so it comes first. A committee of seven
-cannot span regions: at 120 ms one way --- Tokyo to Zurich --- a single distant
-node takes one quote from 0.517 s to 23.0 s, and costs 86% of what moving all
-seven costs (`DEPLOYMENT.md` section 0.1). **Geographic independence cannot be
-bought inside a committee.** Either the seven sit together or the system does
-not quote.
+Two measurements decide the shape here, so they come first.
 
-That is a security parameter being set by a latency measurement, which is worth
-saying out loud rather than absorbing. It has an answer, but the answer is
-different in each tier and the two should be written down as different.
+**Geographic independence has one price, not a sliding scale.** At 120 ms one
+way --- Tokyo to Zurich --- a single distant node takes one quote from 0.517 s
+to 23.0 s, and costs 86% of what moving all seven costs
+(`DEPLOYMENT.md` section 0.1). Six nodes at home and one abroad is not a partial
+purchase of independence; it is the whole bill. So the committee is either
+inside one region or spread across several, and there is nothing in between.
+
+**And the spread committee is affordable, which is the part that is easy to get
+wrong.** The number that matters is not the 26 s but whether the price moved in
+them. Measured against real fills, 26 s of drift is **1.01x** the dispersion the
+same market already shows inside a single block --- a quote that took 26 s is
+not distinguishable from an instantaneous one, because the price was never that
+precisely defined (`DEPLOYMENT.md` section 0.2, on crypto, which is the harshest
+case; instruments that move less make it cheaper still).
+
+So jurisdictional independence for T=2 is **available and purchasable**, not
+foreclosed by physics. What it forecloses is continuous quoting: a stream that
+refreshes every 26 s is not a stream. The choice is therefore per instrument,
+and the two settings do not defend against the same adversary, so both should be
+written down rather than one being assumed.
 
 ### 5.1 Two tiers, two adversaries
 
@@ -421,11 +433,20 @@ node operator and two colluding nodes --- which is the whole of what the design
 is for. What it does not defeat is the jurisdiction itself: one legal order can
 reach all seven.
 
-**It does not have to.** The authority that licenses the venue can already
-compel the records through selective disclosure (section 4). **There is nothing
-to gain by hiding from the regulator that authorised you**, and the sixteen
-market makers, against whom T=2 is exactly as strong as it ever was, are the
-adversary the confidentiality exists for.
+**It does not have to, and that is what makes the fast setting defensible.** The
+authority that licenses the venue can already compel the records through
+selective disclosure (section 4). **There is nothing to gain by hiding from the
+regulator that authorised you**, and the sixteen market makers, against whom T=2
+is exactly as strong as it ever was, are the adversary the confidentiality
+exists for.
+
+**A committee spread across legal orders buys the stronger property outright**,
+and section 5 says what it costs: 26 s, and no continuous quoting. Where the
+instrument is illiquid --- wide spread, thin book, large size --- that is both
+where a leaked order does the most damage and where the 26 s is cheapest, so the
+economics and the physics ask for the same thing. Where the instrument is liquid
+and tight, they do not, and the regional committee with its supervisor is the
+setting that fits.
 
 **Crossing regions is a settlement problem.** Two ledgers that share no state
 settle through an adaptor signature and a deadline, whose cryptography costs
@@ -492,11 +513,14 @@ runs through the cash leg: **finality of the transfer is not finality of the
 claim** --- a stablecoin transfer is final on the ledger while the claim stays
 with its issuer, so section 2.6's ordering survives tokenisation unchanged.
 
-And the committee argument of section 5.1 does not carry over. With no
-authorising supervisor there is no lawful-access channel substituting for
-geographic spread, so T=2 falls back on organisational independence alone --- on
-the rail where an adversary funded to extract value from order flow is most
-plainly present, and where spread now costs 44x. The routing argument fails too:
+And the fast half of section 5.1 does not carry over. With no authorising
+supervisor there is no lawful-access channel substituting for geographic spread,
+so a regional committee's T=2 falls back on organisational independence alone
+--- on the rail where an adversary funded to extract value from order flow is
+most plainly present. **The spread committee is the answer here rather than a
+luxury**, and the staleness measurement that prices it was itself taken on this
+rail, so the 26 s is known to be affordable in exactly the market that needs
+it. The routing argument fails too:
 one metro reaches any chain, so the committee boundary stops coinciding with the
 settlement boundary, and what decides the committee becomes an operator rather
 than a register.
