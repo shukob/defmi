@@ -124,7 +124,8 @@ fn run(bits: usize, repeats: usize) -> Row {
         build_ms.push(t.elapsed().as_secs_f64() * 1e3);
         bytes = pkg.securities_leg.remainder_range.to_bytes().len()
             + pkg.cash_leg.remainder_range.to_bytes().len()
-            + pkg.instruction.ranges.to_bytes().len()
+            + pkg.instruction.amount_range.to_bytes().len()
+            + pkg.instruction.price_range.to_bytes().len()
             + 32 * (3 + 2 + 3 + 2 + 2 + 2 + 3 + 3) + 64 + 32;
 
         let t = Instant::now();
