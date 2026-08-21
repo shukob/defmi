@@ -95,6 +95,7 @@ the runners wrote them. Each carries the host it ran on as a label (`host-a`,
 
 - [`DEFMI.md`](DEFMI.md) --- the settlement layer: what it proves and what it refuses
 - [`REGULATION.md`](REGULATION.md) --- which accounts and which statutes a live deployment touches, in Japan and in four other jurisdictions
+- [`POSITION.md`](POSITION.md) --- what is new here and what is not, stated line by line against the nearest prior work
 
 ## Depends on
 
