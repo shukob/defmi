@@ -91,6 +91,11 @@ Python:
 the runners wrote them. Each carries the host it ran on as a label (`host-a`,
 `host-b`, `host-c`); `scripts/hosts.py` is the mapping.
 
+## Documents
+
+- [`DEFMI.md`](DEFMI.md) --- the settlement layer: what it proves and what it refuses
+- [`REGULATION.md`](REGULATION.md) --- which accounts and which statutes a live deployment touches, in Japan and in four other jurisdictions
+
 ## Depends on
 
 - [zkpi](https://github.com/shukob/zkpi)
