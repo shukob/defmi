@@ -48,3 +48,11 @@ harness = false
 [[bench]]
 name = "rings"
 harness = false
+
+[[bench]]
+name = "ccp"
+harness = false
+
+[[bench]]
+name = "reconcile"
+harness = false

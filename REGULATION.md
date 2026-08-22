@@ -582,7 +582,7 @@ Not one country --- a sequence, because the three needs peak in different places
 | Pricing rule audit | Evidence for the MM's internal control | The control functioning |
 | Inventory state chain | Detection of a second set of books, or retroactive edits | Whether the inventory exists off-ledger |
 | Settlement state root and conservation | Completion of delivery, prevention of double settlement | **That only an authorised issuer issued** --- true only once an issuer signature is in the statement |
-| Selective disclosure | Opening an individual trade to an auditor or a supervisor | Blanket monitoring, which the design cannot provide |
+| Selective disclosure (`defmi/viewing.py`, `zk/binding.py`) | Opening an individual trade, or one scope of one wallet, to an auditor or a supervisor | Blanket monitoring, which the design cannot provide --- and taking a grant back, which it also cannot |
 
 ---
 
@@ -598,7 +598,7 @@ Not one country --- a sequence, because the three needs peak in different places
   attributable.
 - The settlement layer checks conservation, non-negativity and double-spend
   without reading amounts, prices or instrument names.
-- The design can carry a selective disclosure hook for auditors and supervisors.
+- Selective disclosure is built, at three grains: one committed field opened without the others, one scope of a wallet handed to a named auditor, and a statement a quorum of nodes assembles about a value none of them holds. A scope's key reads that scope's notes and nothing else, and carries no ability to spend.
 
 **May not**
 

@@ -132,6 +132,28 @@ A net rail can fail at the close. The order in which that failure is worked thro
 
 **9.5 ms per tranche** --- one range proof's worth, linear. It runs once per default, so nobody need ever care about this number.
 
+### 4.2 Interposing a clearing house, and what novation is worth
+
+The paragraph above ends by calling the batch attestation "the same bargain a central counterparty represents, made explicit". That was one step short. **Under novation there is no split left to verify**, because there are no bilateral claims left to split: a trade between A and B becomes A against the house and the house against B, and the original obligation stops existing. Verifying an allocation that has been extinguished is not a check anybody was owed.
+
+And novation is free here. An obligation is a commitment, so replacing one edge with two is two multiplications and no proof --- nothing is being asserted, the graph is being rewritten. The house's book is flat by the same construction: it owes exactly what it is owed, per asset, so that is one comparison rather than a statement anybody has to establish.
+
+Measured at 8 participants, against the two arms above run by the same harness:
+
+| trades | net-net | net-net+attested | **DeCCP** | vs net-net | novation |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 369.3 ± 4.5 (n=3) | 174.1 ± 2.5 (n=3) | **175.6 ms** | **2.09x** | 14.96 us/trade |
+| 64 | 946.8 ± 8.2 (n=3) | 173.2 ± 2.5 (n=3) | **174.0 ms** | **5.43x** | 16.15 us/trade |
+| 256 | 3258.0 ± 12.1 (n=3) | 178.4 ± 0.3 (n=3) | **186.7 ms** | **17.44x** | 15.98 us/trade |
+
+**net-net grows with the trades and DeCCP does not.** From 16 to 256 trades the instruction path goes 367 ms to 3256 ms while the cleared cycle goes 176 ms to 187 ms. What is left is the close, and the close is per participant.
+
+So the speed was never the contribution --- the attested arm already had it. **What novation costs is 15.98 us a trade, and what it buys is that the arm is defensible**: a named house took the other side, its book is checked flat by anyone, its margin is posted as a committed cap, and its own capital sits in the default waterfall between the defaulting member's fund contribution and the mutualised pool, which is where CPMI-IOSCO and EMIR put it.
+
+A slot rather than a dependency. A deployment names the providers it accepts and several may coexist; nothing in the netting cycle or the settlement layer knows which house cleared a trade, and a deployment with no provider at all is the bilateral case, which still works and pays per-trade proofs for it.
+
+**Four things it does not do.** Obligation graphs are per asset, so a novation that mixed instruments is refused rather than netted across them. Several providers make the waterfall a forest and not a list, and a position at one provider is **not** offset against a position at another --- cross-margining is a different problem and is not solved here. Novation being free arithmetically says nothing about it being valid legally, which is the register's rulebook and not this code. And **the trade set is attested, not verified**: a house that novated trades nobody made would produce a cycle that checks out, which a test states outright. The arithmetic cannot tell. The tranche is what makes getting it wrong expensive.
+
 ## 5. Hiding who paid whom (the note ledger)
 
 The asset tag hides *what*. An account ledger still names four handles in the clear at every settlement. Even with every balance committed, handles that recur draw the counterparty graph.
@@ -298,6 +320,64 @@ This is worth stating plainly because the property was written down as prose bef
 Two things the table is not. The observer here is given **no timing**: every prepare is placed in one block, so a real observer watching them arrive does better than 1/k. And these are account rails. The note ledger of §5 removes the handle rather than deriving it well, which sounds like the stronger answer and is, but §5.2 measured what it is worth and the two findings are the same one: **both constructions hide you in other people's traffic and neither does anything without it.** A ring with no other settlements around it names its note with certainty, exactly as an adaptor with one swap in flight names its partner leg. What differs is the exchange rate --- how much traffic each one needs to buy a given amount of doubt --- and not whether traffic is what is being spent.
 
 This measurement first ran against a version where the property was the caller's to keep. The instruction named two handles and the package named four accounts, and nothing compared them --- so a caller who derived handles per venue and then opened accounts under one name everywhere got the losing row of the table while believing it had the winning one. That is now closed: the four account names are **derived from the two signed handles** (`Sides::of`, one hash of the handle and the rail), `build_package` no longer takes them as an argument, and a package whose accounts disagree with its instruction is rejected before any proof is examined. The per-venue property is enforced where it is used rather than assumed of the caller.
+
+## 6.5 Agreeing with the book of record
+
+Under Japan's book-entry regime this ledger cannot *be* the register: title rests on the record the transfer agent and the account management institutions keep. So it is a mirror, and reconciliation is not a feature but the price of that arrangement.
+
+It is one line of algebra. Commitments multiply, so the product of the balances is a commitment to their sum; divide out the register's figure under the asset tag and what remains must be a pure power of `h`. Proving knowledge of that exponent proves the totals agree and says nothing else --- **no balance opens, and the total was the register's own number**.
+
+| positions | prove | check | quorum assembles |
+| ---: | ---: | ---: | ---: |
+| 16 | 0.25 ± 0.02 (n=7) | 0.30 ± 0.01 (n=7) | 1.29 ± 0.01 (n=7) (3 of 7) |
+| 64 | 0.61 ± 0.02 (n=7) | 0.65 ± 0.03 (n=7) | 1.60 ± 0.06 (n=7) (3 of 7) |
+| 256 | 2.04 ± 0.05 (n=7) | 2.04 ± 0.03 (n=7) | 3.04 ± 0.02 (n=7) (3 of 7) |
+| 1,024 | 7.79 ± 0.06 (n=7) | 7.81 ± 0.12 (n=7) | 8.55 ± 0.08 (n=7) (3 of 7) |
+| 4,096 | 34.77 ± 2.82 (n=7) | 30.15 ± 0.30 (n=7) | 31.02 ± 0.27 (n=7) (3 of 7) |
+
+Linear in the positions and nothing else: at 4,096 it is 30.2 ± 0.3 (n=7) to check, and the proof on the wire is 96 B whatever the ledger holds.
+
+The **quorum** column is the same statement assembled by nodes holding shares of the aggregate blinding, so nobody holds the sum --- which matters, because whoever holds it could open the whole ledger. A sigma response is affine in the witness, so the partials combine into an ordinary proof any verifier accepts.
+
+### 6.5.1 A break is pass or fail, and looking costs disclosure
+
+If the totals disagree the proof does not verify, and that is all anyone learns. Finding *where* needs somebody to claim subtotals, and every subtotal claimed becomes public --- the narrowest of them covers one position, which is a balance. **This is the only operation in DeFMI that discloses on purpose, and it is the operation you reach for on the day something is wrong.**
+
+| positions | sub-range proofs | 2 log2 n + 1 | subtotals made public | narrowest |
+| ---: | ---: | ---: | ---: | ---: |
+| 16 | 9 | 9 | 9 | 1 position |
+| 64 | 13 | 13 | 13 | 1 position |
+| 256 | 17 | 17 | 17 | 1 position |
+| 1,024 | 21 | 21 | 21 | 1 position |
+| 4,096 | 25 | 25 | 25 | 1 position |
+
+A register that holds **a figure per position** rather than one for the account localises for free and discloses nothing: an account management institution already holds the mapping from handle to book-entry account, so it holds the openings and the check is arithmetic on numbers it has. At 4,096 positions that is 322.2 ms.
+
+**Reconciling is the cheap half and the search is not.** Which one you are in depends on what the register keeps, which is a question about the counterparty and not about this ledger.
+
+## 6.6 Showing an auditor one slice
+
+A note wallet is a view key and a spend key, and the view key was always described as the one you could hand an auditor. You could, and that was the whole of it: one key, so handing it over gives every instrument, every period, permanently, with no way back.
+
+The scoping is not in the key. It is in the **address**. A scope --- an instrument, a quarter, a mandate --- derives its own pair of scalars from the wallet's seeds by hashing, so it has its own address, and notes sent there are found by that scope's view key and by nothing else. The derivation is one way, so a scope says nothing about the seed or about a sibling. The note construction, the scan and the spend are all unchanged; what changes is which address a payer is given.
+
+| pool | scan | per note | reached | exactly its scope | serials recovered |
+| ---: | ---: | ---: | ---: | :---: | ---: |
+| 64 | 3.8 ± 0.1 (n=5) | 0.0576 ms | 13 of 64 (20.3%) | yes | 0 |
+| 256 | 15.4 ± 0.2 (n=5) | 0.0591 ms | 52 of 256 (20.3%) | yes | 0 |
+| 1,024 | 60.8 ± 0.7 (n=5) | 0.0585 ms | 205 of 1,024 (20.0%) | yes | 0 |
+
+The scan is one scalar multiplication a note, the same as a wallet scanning for itself, at 0.0585 ms. With 4 scopes in the pool plus a stranger's notes the holder reaches about a fifth of it, which is the fifth it was granted --- and **no serial numbers at all**, because a serial needs the spend key and the grant does not carry one.
+
+A grant is 0.04 ± 0.00 (n=15) to issue and 0.05 ± 0.00 (n=15) to check. It names the grantee and is signed by the wallet, so a key found somewhere it should not be traces to the grant that produced it --- attribution rather than prevention, the same trade `roles.py` makes about a dealt share.
+
+### 6.6.1 Three limits that do not go away
+
+**A grant cannot be taken back.** Whoever holds a scope's key can read every note ever sent to that address and every one that ever will be. An expiry stops a party that chooses to be stopped and nothing else. What actually revokes is moving to the next scope, because the next scope is a different address --- so revocation is an act of address management and not a message.
+
+**A view key is incoming only.** It finds what arrived and cannot see what the wallet spent: spending publishes a serial and a ring, and neither is derivable from the view key. An auditor that needs outflows needs the wallet to hand over its serials, which is a different disclosure than this one.
+
+**Scoping is only as fine as the payers cooperate.** A scope exists because counterparties were told to pay to that address; one who uses last quarter's address puts the note in last quarter's scope and nothing in the protocol stops them. That is an operational control wearing a cryptographic coat, and it is worth knowing which it is.
 
 ## 7. What one settlement node can take
 

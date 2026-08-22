@@ -52,6 +52,12 @@ def main() -> int:
     same_chain = json.loads(same_path.read_text()) if same_path.exists() else None
     rings_path = ART / "rings.json"
     rings = json.loads(rings_path.read_text()) if rings_path.exists() else None
+    rec_path = ART / "reconcile.json"
+    reconcile = json.loads(rec_path.read_text()) if rec_path.exists() else None
+    view_path = ART / "viewing.json"
+    viewing = json.loads(view_path.read_text()) if view_path.exists() else None
+    ccp_path = ART / "deccp.json"
+    deccp = json.loads(ccp_path.read_text()) if ccp_path.exists() else None
 
     out: list[str] = []
     w = out.append
@@ -299,6 +305,64 @@ def main() -> int:
 
     if d.get("notes"):
         n = d["notes"]
+    if deccp:
+        w("### 4.2 Interposing a clearing house, and what novation is worth\n")
+        w("The paragraph above ends by calling the batch attestation \"the same "
+          "bargain a central counterparty represents, made explicit\". That was "
+          "one step short. **Under novation there is no split left to verify**, "
+          "because there are no bilateral claims left to split: a trade between "
+          "A and B becomes A against the house and the house against B, and the "
+          "original obligation stops existing. Verifying an allocation that has "
+          "been extinguished is not a check anybody was owed.\n")
+        w("And novation is free here. An obligation is a commitment, so "
+          "replacing one edge with two is two multiplications and no proof --- "
+          "nothing is being asserted, the graph is being rewritten. The house's "
+          "book is flat by the same construction: it owes exactly what it is "
+          "owed, per asset, so that is one comparison rather than a statement "
+          "anybody has to establish.\n")
+        w(f"Measured at {deccp['participants']} participants, against the two "
+          f"arms above run by the same harness:\n")
+        w("| trades | net-net | net-net+attested | **DeCCP** | vs net-net | novation |")
+        w("| ---: | ---: | ---: | ---: | ---: | ---: |")
+        for row in deccp["rows"]:
+            w(f"| {row['trades']} | {ms(row['net_net'], 1)} | "
+              f"{ms(row['net_net_attested'], 1)} | "
+              f"**{row['deccp_total']:.1f} ms** | "
+              f"**{row['speedup_deccp_vs_plain']}x** | "
+              f"{row['novate_us_per_trade']} us/trade |")
+        w("")
+        first, last = deccp["rows"][0], deccp["rows"][-1]
+        w(f"**net-net grows with the trades and DeCCP does not.** From "
+          f"{first['trades']} to {last['trades']} trades the instruction path "
+          f"goes {first['net_net']['median']:.0f} ms to "
+          f"{last['net_net']['median']:.0f} ms while the cleared cycle goes "
+          f"{first['deccp_total']:.0f} ms to {last['deccp_total']:.0f} ms. What "
+          f"is left is the close, and the close is per participant.\n")
+        w(f"So the speed was never the contribution --- the attested arm already "
+          f"had it. **What novation costs is "
+          f"{last['novate_us_per_trade']} us a trade, and what it buys is that "
+          f"the arm is defensible**: a named house took the other side, its book "
+          f"is checked flat by anyone, its margin is posted as a committed cap, "
+          f"and its own capital sits in the default waterfall between the "
+          f"defaulting member's fund contribution and the mutualised pool, "
+          f"which is where CPMI-IOSCO and EMIR put it.\n")
+        w("A slot rather than a dependency. A deployment names the providers it "
+          "accepts and several may coexist; nothing in the netting cycle or the "
+          "settlement layer knows which house cleared a trade, and a deployment "
+          "with no provider at all is the bilateral case, which still works and "
+          "pays per-trade proofs for it.\n")
+        w("**Four things it does not do.** Obligation graphs are per asset, so a "
+          "novation that mixed instruments is refused rather than netted across "
+          "them. Several providers make the waterfall a forest and not a list, "
+          "and a position at one provider is **not** offset against a position "
+          "at another --- cross-margining is a different problem and is not "
+          "solved here. Novation being free arithmetically says nothing about it "
+          "being valid legally, which is the register's rulebook and not this "
+          "code. And **the trade set is attested, not verified**: a house that "
+          "novated trades nobody made would produce a cycle that checks out, "
+          "which a test states outright. The arithmetic cannot tell. The tranche "
+          "is what makes getting it wrong expensive.\n")
+
         w("## 5. Hiding who paid whom (the note ledger)\n")
         w("The asset tag hides *what*. An account ledger still names four "
           "handles in the clear at every settlement. Even with every balance "
@@ -640,6 +704,113 @@ def main() -> int:
           "instruction is rejected before any proof is examined. The per-venue "
           "property is enforced where it is used rather than assumed of the "
           "caller.\n")
+
+    if reconcile:
+        w("## 6.5 Agreeing with the book of record\n")
+        w("Under Japan's book-entry regime this ledger cannot *be* the register: "
+          "title rests on the record the transfer agent and the account "
+          "management institutions keep. So it is a mirror, and reconciliation "
+          "is not a feature but the price of that arrangement.\n")
+        w("It is one line of algebra. Commitments multiply, so the product of "
+          "the balances is a commitment to their sum; divide out the register's "
+          "figure under the asset tag and what remains must be a pure power of "
+          "`h`. Proving knowledge of that exponent proves the totals agree and "
+          "says nothing else --- **no balance opens, and the total was the "
+          "register's own number**.\n")
+        w("| positions | prove | check | quorum assembles |")
+        w("| ---: | ---: | ---: | ---: |")
+        for row, joint in zip(reconcile["scaling"], reconcile["quorum"]):
+            w(f"| {row['positions']:,} | {ms(row['prove'], 2)} | "
+              f"{ms(row['check'], 2)} | {ms(joint['assemble'], 2)} "
+              f"({len(joint['quorum'])} of {joint['of']}) |")
+        w("")
+        biggest = reconcile["scaling"][-1]
+        w(f"Linear in the positions and nothing else: at "
+          f"{biggest['positions']:,} it is {ms(biggest['check'], 1)} to check, "
+          f"and the proof on the wire is {biggest['wire_bytes']} B whatever the "
+          f"ledger holds.\n")
+        w("The **quorum** column is the same statement assembled by nodes "
+          "holding shares of the aggregate blinding, so nobody holds the sum --- "
+          "which matters, because whoever holds it could open the whole ledger. "
+          "A sigma response is affine in the witness, so the partials combine "
+          "into an ordinary proof any verifier accepts.\n")
+        w("### 6.5.1 A break is pass or fail, and looking costs disclosure\n")
+        w("If the totals disagree the proof does not verify, and that is all "
+          "anyone learns. Finding *where* needs somebody to claim subtotals, and "
+          "every subtotal claimed becomes public --- the narrowest of them "
+          "covers one position, which is a balance. **This is the only operation "
+          "in DeFMI that discloses on purpose, and it is the operation you reach "
+          "for on the day something is wrong.**\n")
+        w("| positions | sub-range proofs | 2 log2 n + 1 | subtotals made public | narrowest |")
+        w("| ---: | ---: | ---: | ---: | ---: |")
+        for row in reconcile["locating"]:
+            w(f"| {row['positions']:,} | {row['sub_range_proofs']} | "
+              f"{row['two_log_n_plus_one']} | "
+              f"{row['subtotals_made_public']} | {row['narrowest_range']} position |")
+        w("")
+        w("A register that holds **a figure per position** rather than one for "
+          "the account localises for free and discloses nothing: an account "
+          "management institution already holds the mapping from handle to "
+          "book-entry account, so it holds the openings and the check is "
+          "arithmetic on numbers it has. "
+          f"At {reconcile['locating'][-1]['positions']:,} positions that is "
+          f"{reconcile['locating'][-1]['per_position_register']['ms']} ms.\n")
+        w("**Reconciling is the cheap half and the search is not.** Which one "
+          "you are in depends on what the register keeps, which is a question "
+          "about the counterparty and not about this ledger.\n")
+
+    if viewing:
+        w("## 6.6 Showing an auditor one slice\n")
+        w("A note wallet is a view key and a spend key, and the view key was "
+          "always described as the one you could hand an auditor. You could, and "
+          "that was the whole of it: one key, so handing it over gives every "
+          "instrument, every period, permanently, with no way back.\n")
+        w("The scoping is not in the key. It is in the **address**. A scope --- "
+          "an instrument, a quarter, a mandate --- derives its own pair of "
+          "scalars from the wallet's seeds by hashing, so it has its own "
+          "address, and notes sent there are found by that scope's view key and "
+          "by nothing else. The derivation is one way, so a scope says nothing "
+          "about the seed or about a sibling. The note construction, the scan "
+          "and the spend are all unchanged; what changes is which address a "
+          "payer is given.\n")
+        w("| pool | scan | per note | reached | exactly its scope | serials recovered |")
+        w("| ---: | ---: | ---: | ---: | :---: | ---: |")
+        for row in viewing["scaling"]:
+            w(f"| {row['pool']:,} | {ms(row['scan'], 1)} | "
+              f"{row['per_note_ms']} ms | "
+              f"{row['notes_reached']} of {row['notes_in_pool']:,} "
+              f"({row['fraction_reached']:.1%}) | "
+              f"{'yes' if row['sees_exactly_its_scope'] else 'NO'} | "
+              f"{row['serials_recovered']} |")
+        w("")
+        w(f"The scan is one scalar multiplication a note, the same as a wallet "
+          f"scanning for itself, at {viewing['scaling'][-1]['per_note_ms']} ms. "
+          f"With {viewing['scopes']} scopes in the pool plus a stranger's notes "
+          f"the holder reaches about a fifth of it, which is the fifth it was "
+          f"granted --- and **no serial numbers at all**, because a serial needs "
+          f"the spend key and the grant does not carry one.\n")
+        w(f"A grant is {ms(viewing['grant']['build'], 2)} to issue and "
+          f"{ms(viewing['grant']['check'], 2)} to check. It names the grantee "
+          f"and is signed by the wallet, so a key found somewhere it should not "
+          f"be traces to the grant that produced it --- attribution rather than "
+          f"prevention, the same trade `roles.py` makes about a dealt share.\n")
+        w("### 6.6.1 Three limits that do not go away\n")
+        w("**A grant cannot be taken back.** Whoever holds a scope's key can "
+          "read every note ever sent to that address and every one that ever "
+          "will be. An expiry stops a party that chooses to be stopped and "
+          "nothing else. What actually revokes is moving to the next scope, "
+          "because the next scope is a different address --- so revocation is "
+          "an act of address management and not a message.\n")
+        w("**A view key is incoming only.** It finds what arrived and cannot see "
+          "what the wallet spent: spending publishes a serial and a ring, and "
+          "neither is derivable from the view key. An auditor that needs "
+          "outflows needs the wallet to hand over its serials, which is a "
+          "different disclosure than this one.\n")
+        w("**Scoping is only as fine as the payers cooperate.** A scope exists "
+          "because counterparties were told to pay to that address; one who uses "
+          "last quarter's address puts the note in last quarter's scope and "
+          "nothing in the protocol stops them. That is an operational control "
+          "wearing a cryptographic coat, and it is worth knowing which it is.\n")
 
     if d.get("parallel"):
         w("## 7. What one settlement node can take\n")

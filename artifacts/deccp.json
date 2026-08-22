@@ -1,0 +1,130 @@
+{
+  "host": "host-c",
+  "group": "ed25519",
+  "participants": 8,
+  "rows": [
+    {
+      "trades": 16,
+      "net_net": {
+        "n": 3,
+        "mean": 369.2706953443121,
+        "sd": 4.535017077886865,
+        "median": 366.83695795363747,
+        "min": 366.4720850356389,
+        "max": 374.50304304366,
+        "rsd": 0.012281009934076584
+      },
+      "net_net_attested": {
+        "n": 3,
+        "mean": 174.05576165765524,
+        "sd": 2.543325200983549,
+        "median": 175.0140810618177,
+        "min": 171.17249692091718,
+        "max": 175.98070699023083,
+        "rsd": 0.014612128761275567
+      },
+      "deccp_added_to_attested": {
+        "n": 3,
+        "mean": 0.6301673323226472,
+        "sd": 0.0771267823316562,
+        "median": 0.590666983043775,
+        "min": 0.5807920242659748,
+        "max": 0.7190429896581918,
+        "rsd": 0.12239095614078435
+      },
+      "deccp_total": 175.60474804486148,
+      "speedup_attested_vs_plain": 2.1,
+      "speedup_deccp_vs_plain": 2.09,
+      "novate_us_per_trade": 14.96,
+      "check_us_per_trade": 18.86,
+      "verify_per_order_ms_plain": 196.94,
+      "book_flat_without_a_proof": true,
+      "edges": {
+        "before": 16,
+        "after": 32
+      }
+    },
+    {
+      "trades": 64,
+      "net_net": {
+        "n": 3,
+        "mean": 946.7736793449149,
+        "sd": 8.246779268851038,
+        "median": 944.4515000504907,
+        "min": 939.9369579914492,
+        "max": 955.9325799928047,
+        "rsd": 0.00871040191416928
+      },
+      "net_net_attested": {
+        "n": 3,
+        "mean": 173.17452671704814,
+        "sd": 2.4642444622605515,
+        "median": 171.7811209964566,
+        "min": 171.72266816487536,
+        "max": 176.01979098981246,
+        "rsd": 0.014229832233275909
+      },
+      "deccp_added_to_attested": {
+        "n": 3,
+        "mean": 2.16008298836338,
+        "sd": 0.024249270857457074,
+        "median": 2.173916989704594,
+        "min": 2.1320829982869327,
+        "max": 2.174248977098614,
+        "rsd": 0.011226082973705517
+      },
+      "deccp_total": 173.9550379861612,
+      "speedup_attested_vs_plain": 5.5,
+      "speedup_deccp_vs_plain": 5.43,
+      "novate_us_per_trade": 16.15,
+      "check_us_per_trade": 17.0,
+      "verify_per_order_ms_plain": 777.58,
+      "book_flat_without_a_proof": true,
+      "edges": {
+        "before": 64,
+        "after": 128
+      }
+    },
+    {
+      "trades": 256,
+      "net_net": {
+        "n": 3,
+        "mean": 3258.0020426636715,
+        "sd": 12.063100316264125,
+        "median": 3256.309996242635,
+        "min": 3246.8742977362126,
+        "max": 3270.8218340121675,
+        "rsd": 0.003702606738208671
+      },
+      "net_net_attested": {
+        "n": 3,
+        "mean": 178.44095573915789,
+        "sd": 0.266025300052785,
+        "median": 178.45495539950207,
+        "min": 178.16820702864788,
+        "max": 178.69970478932373,
+        "rsd": 0.0014908309527419058
+      },
+      "deccp_added_to_attested": {
+        "n": 3,
+        "mean": 8.278137994542098,
+        "sd": 0.012616118402723368,
+        "median": 8.276165986899287,
+        "min": 8.266624005045742,
+        "max": 8.291623991681263,
+        "rsd": 0.00152402852079071
+      },
+      "deccp_total": 186.73112138640136,
+      "speedup_attested_vs_plain": 18.25,
+      "speedup_deccp_vs_plain": 17.44,
+      "novate_us_per_trade": 15.98,
+      "check_us_per_trade": 16.05,
+      "verify_per_order_ms_plain": 3088.46,
+      "book_flat_without_a_proof": true,
+      "edges": {
+        "before": 256,
+        "after": 512
+      }
+    }
+  ]
+}

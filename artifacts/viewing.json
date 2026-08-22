@@ -1,0 +1,89 @@
+{
+  "host": "host-c",
+  "group": "ed25519",
+  "scopes": 4,
+  "scaling": [
+    {
+      "pool": 64,
+      "scan": {
+        "n": 5,
+        "mean": 3.775925195077434,
+        "sd": 0.07806776081162142,
+        "median": 3.7962920032441616,
+        "min": 3.68383398745209,
+        "max": 3.8792919949628413,
+        "rsd": 0.020675134378561347
+      },
+      "per_note_ms": 0.0576,
+      "notes_reached": 13,
+      "notes_in_pool": 64,
+      "fraction_reached": 0.2031,
+      "total_seen": 3745,
+      "total_planted_in_that_scope": 3745,
+      "sees_exactly_its_scope": true,
+      "serials_recovered": 0
+    },
+    {
+      "pool": 256,
+      "scan": {
+        "n": 5,
+        "mean": 15.42379199527204,
+        "sd": 0.17365045115233688,
+        "median": 15.492584003368393,
+        "min": 15.117667004233226,
+        "max": 15.537958999630064,
+        "rsd": 0.01125860950443102
+      },
+      "per_note_ms": 0.0591,
+      "notes_reached": 52,
+      "notes_in_pool": 256,
+      "fraction_reached": 0.2031,
+      "total_seen": 12207,
+      "total_planted_in_that_scope": 12207,
+      "sees_exactly_its_scope": true,
+      "serials_recovered": 0
+    },
+    {
+      "pool": 1024,
+      "scan": {
+        "n": 5,
+        "mean": 60.805149597581476,
+        "sd": 0.694584174470143,
+        "median": 61.155625007813796,
+        "min": 59.870791010325775,
+        "max": 61.38358300086111,
+        "rsd": 0.011423114309676331
+      },
+      "per_note_ms": 0.0585,
+      "notes_reached": 205,
+      "notes_in_pool": 1024,
+      "fraction_reached": 0.2002,
+      "total_seen": 52126,
+      "total_planted_in_that_scope": 52126,
+      "sees_exactly_its_scope": true,
+      "serials_recovered": 0
+    }
+  ],
+  "grant": {
+    "build": {
+      "n": 15,
+      "mean": 0.03905006451532245,
+      "sd": 0.0028896637396395555,
+      "median": 0.038166006561368704,
+      "min": 0.036874989746138453,
+      "max": 0.04837499000132084,
+      "rsd": 0.07399894918241967
+    },
+    "check": {
+      "n": 15,
+      "mean": 0.05199166286426286,
+      "sd": 0.004043299395039787,
+      "median": 0.04983297549188137,
+      "min": 0.04941702354699373,
+      "max": 0.06295897765085101,
+      "rsd": 0.07776822614032991
+    },
+    "expired_is_refused": true,
+    "wrong_owner_is_refused": true
+  }
+}

@@ -112,6 +112,7 @@ impl CreditCtx {
 
 // --- the default waterfall ------------------------------------------------
 
+#[derive(Clone)]
 pub struct Tranche {
     pub name: String,
     pub commitment: RistrettoPoint,

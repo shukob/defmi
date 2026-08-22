@@ -52,11 +52,42 @@ impl Wallet {
         let spend = Scalar::random(rng);
         Wallet { view, spend, address: Address { view: G * view, spend: G * spend } }
     }
+
+    /// A wallet from scalars somebody else derived.
+    ///
+    /// `viewing.rs` derives a pair per scope from one seed, so that handing an
+    /// auditor one scope's view key hands it that scope and nothing else. The
+    /// wallet is otherwise ordinary: this is what spends.
+    pub fn from_parts(view: Scalar, spend: Scalar) -> Self {
+        Wallet { view, spend, address: Address { view: G * view, spend: G * spend } }
+    }
+
+    /// The half that finds notes and cannot move them.
+    pub fn view_key(&self) -> ViewKey {
+        ViewKey { scalar: self.view }
+    }
     fn shared(&self, ephemeral: &RistrettoPoint) -> Scalar {
         scalar_from(b"shared", &[(ephemeral * self.view).compress().as_bytes()])
     }
     pub fn serial(&self, ephemeral: &RistrettoPoint) -> Scalar {
         self.shared(ephemeral) + self.spend
+    }
+}
+
+/// Enough to find notes addressed to one address, and not enough to spend one.
+///
+/// Withholding the spend key is not a policy here: the scalar a serial number
+/// needs is simply not in this type, so there is no method to refuse.
+#[derive(Clone)]
+pub struct ViewKey { pub(crate) scalar: Scalar }
+
+impl ViewKey {
+    pub fn new(scalar: Scalar) -> Self { ViewKey { scalar } }
+
+    pub fn address_view(&self) -> RistrettoPoint { G * self.scalar }
+
+    pub(crate) fn shared(&self, ephemeral: &RistrettoPoint) -> Scalar {
+        scalar_from(b"shared", &[(ephemeral * self.scalar).compress().as_bytes()])
     }
 }
 
@@ -223,6 +254,31 @@ impl NoteLedger {
                 + asset_key.commit_u64(value, &blinding);
             if expected == self.commitment_of(note) {
                 found.push((index, Opening { value, blinding, serial: wallet.serial(&note.ephemeral) }));
+            }
+        }
+        found
+    }
+
+    /// Every note addressed to `address` that this view key can open, and the
+    /// amounts --- but no serial numbers, because a serial needs the spend key.
+    ///
+    /// One scalar multiplication a note, the same as a wallet scanning for
+    /// itself. What differs is the tuple that comes back: there is nowhere to
+    /// put a serial, so an auditor cannot be handed one by accident.
+    pub fn scan_view(&self, view: &ViewKey, address: &Address, asset_key: &Pedersen)
+        -> Vec<(usize, u64, Scalar)>
+    {
+        let mut found = Vec::new();
+        for (index, note) in self.notes.iter().enumerate() {
+            let shared = view.shared(&note.ephemeral);
+            let (mv, mb) = self.masks(&shared);
+            let value_scalar = note.masked_value - mv;
+            let blinding = note.masked_blinding - mb;
+            let Some(value) = small_scalar(&value_scalar, self.bits) else { continue };
+            let expected = self.one_time_point(address, &shared)
+                + asset_key.commit_u64(value, &blinding);
+            if expected == self.commitment_of(note) {
+                found.push((index, value, blinding));
             }
         }
         found
@@ -405,6 +461,19 @@ impl NoteLedger {
     /// history is a running hash extended once per change. The sort was buying
     /// order-independence for a sequence that already has an order: the one
     /// the chain applied.
+    /// Whether this serial has already been published.
+    ///
+    /// Exposed so an outflow disclosure can be checked against the ledger by
+    /// somebody who is not the wallet. Knowing that a serial was spent reveals
+    /// nothing on its own --- it appears in public exactly once.
+    ///
+    /// What the spent set holds is `g^S` and not `S`, because that is what a
+    /// spend publishes. Comparing the scalar to it silently matched nothing,
+    /// which is the kind of wrong a test finds and a reading does not.
+    pub fn is_spent(&self, serial: &Scalar) -> bool {
+        self.spent.contains(&(G * serial).compress().to_bytes())
+    }
+
     pub fn snapshot(&self) -> [u8; 32] {
         self.rolling.clone().finalize().into()
     }

@@ -1,5 +1,24 @@
 {
   "artifacts": {
+    "ccp_rust.json": {
+      "bytes": 2921,
+      "host": "host-c",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "sha256": "1653d0329055eae2651fe9e0d424baca671773e5017a52e85fac16a418d6857a"
+    },
+    "deccp.json": {
+      "bytes": 3584,
+      "host": "host-c",
+      "sha256": "231364dba125cb88b50dd7d62804d763994f1e024d9ad8622f26019496bc7b1d"
+    },
+    "deccp_prediction.json": {
+      "bytes": 5909,
+      "sha256": "e8b8608df2d545b94c0a017a51a83f4a51335dd0873368318f49da9a20f81362"
+    },
+    "deccp_rust_prediction.json": {
+      "bytes": 3925,
+      "sha256": "686f59464f7a521188c1a44c48ef2a6a2a0cba217a7470d318f452500e3399f1"
+    },
     "defmi.json": {
       "bytes": 54319,
       "host": "host-c",
@@ -31,6 +50,17 @@
       "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
       "sha256": "ea3548fad8e4daa60cac24b5d0c65b44825e9e2c7314729e9a329e71bbe9c276"
     },
+    "reconcile.json": {
+      "bytes": 6928,
+      "host": "host-c",
+      "sha256": "386c465bbaa3801c92af294359fbd1734df2d18bba23f10768fc271f9c9e468a"
+    },
+    "reconcile_rust.json": {
+      "bytes": 4506,
+      "host": "host-c",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "sha256": "9c8a33c85b9b96a793facf0a146a3c5431c27329f41ada6449f46d233e4bd94c"
+    },
     "rings.json": {
       "bytes": 5624,
       "host": "host-a",
@@ -49,6 +79,11 @@
       "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
       "sha256": "e0c6a0fcddf816659fbaa1903b391d375bc4f0be87dc9530e8a4f26e41eaf70c"
     },
+    "viewing.json": {
+      "bytes": 2278,
+      "host": "host-c",
+      "sha256": "5290e7e79cbc01cdadca3d4ff9179309c94e70d2b3492c9f1c55263b2153f08b"
+    },
     "wasm_native.json": {
       "bytes": 465,
       "host": "host-a",
@@ -64,5 +99,5 @@
       "target": "wasm32"
     }
   },
-  "commit": "ff11c2129ed75cadd78310d23819c9768311443e"
+  "commit": "efa4bb9a62b2362c6aa292c6f7fda57c0e72055d"
 }
