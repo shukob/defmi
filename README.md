@@ -89,7 +89,10 @@ Python:
 
 `artifacts/` holds the measurements the numbers in the paper are taken from, as
 the runners wrote them. Each carries the host it ran on as a label (`host-a`,
-`host-b`, `host-c`); `scripts/hosts.py` is the mapping.
+`host-b`, `host-c`) rather than a machine name, and the mapping back is not
+published --- it names people's machines. `scripts/hosts.py` reads it from a
+local file when there is one and labels nothing when there is not, which is what
+this copy does.
 
 ## Documents
 
