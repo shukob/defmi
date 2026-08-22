@@ -17,9 +17,10 @@ use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::Identity;
 use merlin::Transcript;
 use qomm_zk::pedersen::Pedersen;
-use qomm_zk::sigma::{product_terms, prove_opening, prove_product, opening_terms, Batch,
-                     OpeningProof, ProductProof};
+use qomm_zk::sigma::{product_terms, prove_opening, prove_product, opening_terms,
+                     verify_product, Batch, OpeningProof, ProductProof};
 use rand_core::{CryptoRng, RngCore};
+use sha2::Digest;
 
 /// A net debit cap and the collateral standing behind it.
 ///
@@ -298,5 +299,154 @@ impl Waterfall {
                 commitment: t.commitment - d.amount_commitment,
             })
             .collect()
+    }
+}
+
+// --- collateral that is a security rather than an amount --------------------
+
+/// A pledge whose value is derived rather than asserted.
+///
+/// `CreditLine` takes collateral already valued, which is fine when the pledge
+/// is cash and wrong the moment it is a security: a member that supplies its own
+/// valuation is underwriting itself. What makes a valuation somebody else's is
+/// the **price** --- the quorum signs one in a payment instruction, and the same
+/// product relation the cash leg of a settlement uses turns a quantity and that
+/// price into a value without opening either.
+///
+/// So the object carries three commitments and the proof that binds them, and
+/// the caller has to have checked that `price` is the commitment inside an
+/// instruction the quorum signed. That check is `Venue::verify` and it is not
+/// repeated here, because repeating it would mean holding the instruction and
+/// this type is about the pledge.
+pub struct ValuedCollateral {
+    /// How much of the security is pledged.
+    pub quantity: RistrettoPoint,
+    /// The price the quorum signed, taken from an instruction's commitment.
+    pub price: RistrettoPoint,
+    /// quantity * price, which is what the haircut is applied to.
+    pub value: RistrettoPoint,
+    pub proof: ProductProof,
+}
+
+impl CreditCtx {
+    /// Value a pledge at a price the member did not choose.
+    ///
+    /// Run by the member, which is the party that knows what it pledged. The
+    /// price blinding comes from the instruction's openings, so a member cannot
+    /// produce this for a price no quorum ever signed --- it would have to know
+    /// the blinding of a commitment it did not make.
+    #[allow(clippy::too_many_arguments)]
+    pub fn value_pledge<R: RngCore + CryptoRng>(
+        &self, quantity: u64, quantity_blinding: &Scalar,
+        price: u64, price_blinding: &Scalar, value_blinding: &Scalar,
+        signed_price_commitment: &RistrettoPoint, rng: &mut R,
+    ) -> Result<(ValuedCollateral, u64), &'static str> {
+        if self.key.commit_u64(price, price_blinding) != *signed_price_commitment {
+            return Err("that is not the price the quorum signed");
+        }
+        let value = quantity.checked_mul(price).ok_or("the valuation overflows")?;
+        let mut t = Transcript::new(b"qomm:credit:valuation");
+        let proof = prove_product(
+            &self.key, &mut t, &self.key.commit_u64(quantity, quantity_blinding),
+            &Scalar::from(quantity), quantity_blinding,
+            &Scalar::from(price), price_blinding, value_blinding, rng);
+        Ok((ValuedCollateral {
+            quantity: self.key.commit_u64(quantity, quantity_blinding),
+            price: *signed_price_commitment,
+            value: self.key.commit_u64(value, value_blinding),
+            proof,
+        }, value))
+    }
+
+    /// That the value really is the quantity times the price the quorum signed.
+    ///
+    /// Nothing opens. What the infrastructure learns is the relation, which is
+    /// the only thing it needs in order to be willing to lend against it.
+    pub fn check_pledge(&self, pledge: &ValuedCollateral,
+                        signed_price_commitment: &RistrettoPoint)
+        -> Result<(), &'static str>
+    {
+        if pledge.price != *signed_price_commitment {
+            return Err("valued at a price other than the one the quorum signed");
+        }
+        let mut t = Transcript::new(b"qomm:credit:valuation");
+        if verify_product(&self.key, &mut t, &pledge.quantity, &pledge.price,
+                          &pledge.value, &pledge.proof) {
+            Ok(())
+        } else {
+            Err("the valuation does not hold")
+        }
+    }
+
+    /// Grant against a pledge that was valued rather than declared.
+    ///
+    /// Identical to `grant` downstream of the valuation, which is the point:
+    /// what changes is where the number came from, and that is exactly the part
+    /// a member should not be trusted with.
+    #[allow(clippy::too_many_arguments)]
+    pub fn grant_against(
+        &self, handle: &[u8], rail: &'static str, cap: u64, cap_blinding: &Scalar,
+        pledge: &ValuedCollateral, value: u64, value_blinding: &Scalar,
+        haircut_bp: u64, signed_price_commitment: &RistrettoPoint,
+    ) -> Result<CreditLine, &'static str> {
+        self.check_pledge(pledge, signed_price_commitment)?;
+        if self.key.commit_u64(value, value_blinding) != pledge.value {
+            return Err("the opening offered is not the value that was proved");
+        }
+        self.grant(handle, rail, cap, cap_blinding, value, value_blinding, haircut_bp)
+    }
+}
+
+// --- writing the tranches down ---------------------------------------------
+
+/// The tranches as somebody holds them, and the resolutions already applied.
+///
+/// `Waterfall` proves and verifies and hands back what the tranches became;
+/// writing that down was the caller's job and so, therefore, was noticing that
+/// the same resolution had been applied twice. A default is resolved once.
+pub struct TrancheBook {
+    pub tranches: Vec<Tranche>,
+    applied: std::collections::HashSet<[u8; 32]>,
+}
+
+/// What a resolution is identified by. Covers the shortfall and every draw, so
+/// two resolutions of the same shortfall drawing differently are different.
+pub fn resolution_id(resolution: &Resolution) -> [u8; 32] {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"QOMM:DEFMI:RESOLUTION:v1");
+    hasher.update(resolution.shortfall_commitment.compress().as_bytes());
+    for draw in &resolution.draws {
+        hasher.update(draw.amount_commitment.compress().as_bytes());
+    }
+    hasher.finalize().into()
+}
+
+impl TrancheBook {
+    pub fn new(tranches: Vec<Tranche>) -> Self {
+        TrancheBook { tranches, applied: std::collections::HashSet::new() }
+    }
+
+    pub fn applied_count(&self) -> usize {
+        self.applied.len()
+    }
+
+    /// Check a resolution and write it down, once.
+    ///
+    /// The waterfall is rebuilt from the book's current tranches rather than
+    /// from the ones the resolution was proved against, so a resolution proved
+    /// against a fuller book does not verify here --- which is what stops a
+    /// second default being absorbed by capital the first one already ate.
+    pub fn apply<R: RngCore + CryptoRng>(
+        &mut self, key: Pedersen, bits: usize, resolution: &Resolution, rng: &mut R,
+    ) -> Result<(), &'static str> {
+        let id = resolution_id(resolution);
+        if self.applied.contains(&id) {
+            return Err("this resolution has already been written down");
+        }
+        let waterfall = Waterfall::new(key, self.tranches.clone(), bits);
+        waterfall.check(resolution, rng)?;
+        self.tranches = waterfall.applied(resolution);
+        self.applied.insert(id);
+        Ok(())
     }
 }

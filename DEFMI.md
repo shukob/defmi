@@ -355,6 +355,25 @@ A register that holds **a figure per position** rather than one for the account 
 
 **Reconciling is the cheap half and the search is not.** Which one you are in depends on what the register keeps, which is a question about the counterparty and not about this ledger.
 
+### 5.2 The same, in Rust
+
+The note rail's delivery versus payment is ported, and this is the measurement that lets the sentence about it go from section 9 rather than be softened.
+
+| ring | build | settle | package |
+| ---: | ---: | ---: | ---: |
+| 2 | 32.0 ± 0.3 (n=5) | 46.5 ± 2.1 (n=5) | 4,532 B |
+| 4 | 32.7 ± 0.1 (n=5) | 48.5 ± 1.7 (n=5) | 4,996 B |
+| 8 | 37.6 ± 1.9 (n=5) | 51.9 ± 0.4 (n=5) | 5,476 B |
+| 16 | 36.2 ± 0.4 (n=5) | 58.4 ± 0.6 (n=5) | 5,988 B |
+| 32 | 39.4 ± 0.3 (n=5) | 71.2 ± 0.8 (n=5) | 6,564 B |
+| 64 | 45.8 ± 0.4 (n=5) | 95.2 ± 0.3 (n=5) | 7,268 B |
+
+**The package is the comparable column and it is about nine times smaller** --- 5,476 B against 50,827 at a ring of eight --- which is the same Bulletproofs-against-bit-decomposition effect the account rail showed in section 5.1.
+
+The two `build` columns are **not** comparable and the ratio between them means nothing: the Rust one includes the whole three-of-seven FROST ceremony that issues the instruction, and the Python one does not. Saying so is cheaper than a footnote nobody reads under a number somebody quotes.
+
+`settle` builds a fresh world and a fresh package each time, because settling consumes both, so it is an upper bound carrying a build inside it.
+
 ## 6.6 Showing an auditor one slice
 
 A note wallet is a view key and a spend key, and the view key was always described as the one you could hand an auditor. You could, and that was the whole of it: one key, so handing it over gives every instrument, every period, permanently, with no way back.
@@ -374,6 +393,8 @@ A grant is 0.04 ± 0.00 (n=15) to issue and 0.05 ± 0.00 (n=15) to check. It nam
 ### 6.6.1 Three limits that do not go away
 
 **A grant cannot be taken back.** Whoever holds a scope's key can read every note ever sent to that address and every one that ever will be. An expiry stops a party that chooses to be stopped and nothing else. What actually revokes is moving to the next scope, because the next scope is a different address --- so revocation is an act of address management and not a message.
+
+Which is why the schedule is an object rather than a discipline. `Rolling` says what the scope in force is, what address to publish and when it stops being it; a grant issued against it expires when the period does, so it is never current for a scope nothing is being paid into. Two questions stay separate --- whether a grant is well formed by its own dates, and whether it is for the scope money is going into now --- because one failure is a bad grant and the other is a wallet that has not rolled. And a payer using a stale address puts the note in a stale scope, which nothing in the protocol stops, so `arrived_off_schedule` is what a payee that cares runs.
 
 **A view key is incoming only.** It finds what arrived and cannot see what the wallet spent: spending publishes a serial and a ring, and neither is derivable from the view key. An auditor that needs outflows needs the wallet to hand over its serials, which is a different disclosure than this one.
 
@@ -412,8 +433,6 @@ Per core that is 20.5 to 128.5 settlements per second. Parallelism is independen
 
 ## 9. What is still missing
 
-- The cash rail carries no tag, because hiding *which cash* means nothing with a single settlement currency. Making it multi-currency is the same construction applied once more, but it is neither built nor measured.
+- A tagged cash leg needs cash accounts opened under that currency's tag; the remainder proof opens against the balance the payer already has, so a leg cannot claim a currency the account is not denominated in. That is the property doing the work, and it means adding a second settlement currency is an account-opening decision rather than a code change.
 - Whoever sent a note can tell that it was spent, because they know the `g^S` they built. That is unavoidable in this construction. To a third party the ring size is the limit of what is learned.
-- Collateral is handled as an already-valued amount. Turning pledged securities into a valuation --- quantity x price, against a price the quorum signed --- is not implemented, and a deployment where collateral and credit are different assets needs it.
-- The Rust side has no note-rail DvP (`note_settlement`). The account rail, netting, credit and notes on their own are ported; the measurement in section 5.1 exists only in Python.
-- Working a waterfall through to the ledger is not wired up. It proves and verifies; writing the tranches down is still the caller's job.
+- The note rail's decoy selection is uniform over the pool, and a real spend is of a recently received note. Section 5's finding stands: an anonymity set is other people's traffic, and the decoy rule only decides whether the ring can use it.

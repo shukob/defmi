@@ -113,7 +113,7 @@ fn run(bits: usize, repeats: usize) -> (f64, f64, f64, usize, usize) {
                 cash_balance: cash_holding.0, cash_blinding: cash_holding.1,
             },
             &InstructionOpenings { amount: openings.amount, price: openings.price },
-            Some(&tag), &gamma, &mut rng).unwrap();
+            Some(&tag), &gamma, None, &Scalar::ZERO, &mut rng).unwrap();
         build_ms.push(t.elapsed().as_secs_f64() * 1e3);
 
         let t = Instant::now();

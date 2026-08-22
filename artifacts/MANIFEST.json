@@ -44,6 +44,12 @@
       "bytes": 352,
       "sha256": "0fd2d7ade7ae64241def6c00f589fd335a3f20533eb5d2944d2c233301e13880"
     },
+    "note_dvp_rust.json": {
+      "bytes": 2079,
+      "host": "host-c",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "sha256": "703b05f2e36db34dc33ec03e15d3f3112fbf01516488fa56b9a13472ab9e9909"
+    },
     "pvp.json": {
       "bytes": 918,
       "host": "host-a",
@@ -99,5 +105,5 @@
       "target": "wasm32"
     }
   },
-  "commit": "efa4bb9a62b2362c6aa292c6f7fda57c0e72055d"
+  "commit": "43aa4604bd042f6f6848b2eefd50a41e84591ae9"
 }

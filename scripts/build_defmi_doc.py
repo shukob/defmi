@@ -54,6 +54,9 @@ def main() -> int:
     rings = json.loads(rings_path.read_text()) if rings_path.exists() else None
     rec_path = ART / "reconcile.json"
     reconcile = json.loads(rec_path.read_text()) if rec_path.exists() else None
+    note_dvp_path = ART / "note_dvp_rust.json"
+    note_dvp = (json.loads(note_dvp_path.read_text())
+                if note_dvp_path.exists() else None)
     view_path = ART / "viewing.json"
     viewing = json.loads(view_path.read_text()) if view_path.exists() else None
     ccp_path = ART / "deccp.json"
@@ -759,6 +762,31 @@ def main() -> int:
           "you are in depends on what the register keeps, which is a question "
           "about the counterparty and not about this ledger.\n")
 
+    if note_dvp:
+        w("### 5.2 The same, in Rust\n")
+        w("The note rail's delivery versus payment is ported, and this is the "
+          "measurement that lets the sentence about it go from section 9 rather "
+          "than be softened.\n")
+        w("| ring | build | settle | package |")
+        w("| ---: | ---: | ---: | ---: |")
+        for row in note_dvp["rows"]:
+            w(f"| {row['ring']} | {ms(row['build'], 1)} | "
+              f"{ms(row['settle_including_build'], 1)} | "
+              f"{row['package_bytes']:,} B |")
+        w("")
+        w("**The package is the comparable column and it is about nine times "
+          "smaller** --- 5,476 B against 50,827 at a ring of eight --- which is "
+          "the same Bulletproofs-against-bit-decomposition effect the account "
+          "rail showed in section 5.1.\n")
+        w("The two `build` columns are **not** comparable and the ratio between "
+          "them means nothing: the Rust one includes the whole three-of-seven "
+          "FROST ceremony that issues the instruction, and the Python one does "
+          "not. Saying so is cheaper than a footnote nobody reads under a "
+          "number somebody quotes.\n")
+        w("`settle` builds a fresh world and a fresh package each time, because "
+          "settling consumes both, so it is an upper bound carrying a build "
+          "inside it.\n")
+
     if viewing:
         w("## 6.6 Showing an auditor one slice\n")
         w("A note wallet is a view key and a spend key, and the view key was "
@@ -801,6 +829,16 @@ def main() -> int:
           "nothing else. What actually revokes is moving to the next scope, "
           "because the next scope is a different address --- so revocation is "
           "an act of address management and not a message.\n")
+        w("Which is why the schedule is an object rather than a discipline. "
+          "`Rolling` says what the scope in force is, what address to publish "
+          "and when it stops being it; a grant issued against it expires when "
+          "the period does, so it is never current for a scope nothing is being "
+          "paid into. Two questions stay separate --- whether a grant is well "
+          "formed by its own dates, and whether it is for the scope money is "
+          "going into now --- because one failure is a bad grant and the other "
+          "is a wallet that has not rolled. And a payer using a stale address "
+          "puts the note in a stale scope, which nothing in the protocol stops, "
+          "so `arrived_off_schedule` is what a payee that cares runs.\n")
         w("**A view key is incoming only.** It finds what arrived and cannot see "
           "what the wallet spent: spending publishes a serial and a ring, and "
           "neither is derivable from the view key. An auditor that needs "
@@ -926,26 +964,26 @@ def main() -> int:
           "difference to swallow that.\n")
 
     w("## 9. What is still missing\n")
-    w("- The cash rail carries no tag, because hiding *which cash* means nothing "
-      "with a single settlement currency. Making it multi-currency is the same "
-      "construction applied once more, but it is neither built nor measured.")
+
     if not d.get("note_settlement"):
         w("- The note ledger and DvP settlement are not yet joined. Notes work "
           "and are measured on their own, but `Defmi.settle` is still the "
           "account ledger.")
+    w("- A tagged cash leg needs cash accounts opened under that currency's "
+      "tag; the remainder proof opens against the balance the payer already "
+      "has, so a leg cannot claim a currency the account is not denominated "
+      "in. That is the property doing the work, and it means adding a second "
+      "settlement currency is an account-opening decision rather than a code "
+      "change.")
     w("- Whoever sent a note can tell that it was spent, because they know the "
       "`g^S` they built. That is unavoidable in this construction. To a third "
       "party the ring size is the limit of what is learned.")
-    w("- Collateral is handled as an already-valued amount. Turning pledged "
-      "securities into a valuation --- quantity x price, against a price the "
-      "quorum signed --- is not implemented, and a deployment where collateral "
-      "and credit are different assets needs it.")
-    if rust:
-        w("- The Rust side has no note-rail DvP (`note_settlement`). The account "
-          "rail, netting, credit and notes on their own are ported; the "
-          "measurement in section 5.1 exists only in Python.")
-    w("- Working a waterfall through to the ledger is not wired up. It proves "
-      "and verifies; writing the tranches down is still the caller's job.")
+
+
+    w("- The note rail's decoy selection is uniform over the pool, and a real "
+      "spend is of a recently received note. Section 5's finding stands: an "
+      "anonymity set is other people's traffic, and the decoy rule only decides "
+      "whether the ring can use it.")
 
     (ROOT / "DEFMI.md").write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"wrote {ROOT / 'DEFMI.md'}")

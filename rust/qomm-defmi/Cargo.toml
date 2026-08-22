@@ -27,6 +27,7 @@ sha2.workspace = true
 rand_core.workspace = true
 
 [dev-dependencies]
+qomm-zkpi = { git = "https://github.com/shukob/zkpi" }
 rand = "0.8"
 qomm-measure = { git = "https://github.com/shukob/zkpi" }
 merlin.workspace = true
@@ -55,4 +56,8 @@ harness = false
 
 [[bench]]
 name = "reconcile"
+harness = false
+
+[[bench]]
+name = "note_dvp"
 harness = false

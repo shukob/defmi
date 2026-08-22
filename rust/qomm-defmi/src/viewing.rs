@@ -337,3 +337,111 @@ pub fn check_spend_disclosure(disclosure: &SpendDisclosure, owner: &VerifyingKey
 pub fn conflicts_with(grant: &ViewingGrant, disclosure: &SpendDisclosure) -> bool {
     grant.scope == disclosure.scope
 }
+
+// --- rolling a scope, which is what revocation actually is ------------------
+
+/// A scope that moves on a schedule, so that revoking is an act somebody takes
+/// rather than a discipline they keep.
+///
+/// The module says revocation is the next scope, and leaves it there. That is
+/// true and it is not enough: a wallet that never rolls has granted forever
+/// without deciding to, and a payer that is never told a new address keeps
+/// paying into the old scope whatever the wallet intended. So the schedule is
+/// an object --- what the current scope is, what address to publish, and when
+/// it stops being current.
+///
+/// **It does not make an old key stop working.** Nothing can. What it does is
+/// make the thing that *does* work --- moving --- something a caller can do on
+/// a clock instead of remembering to.
+#[derive(Clone)]
+pub struct Rolling {
+    pub name: String,
+    /// Seconds a period lasts. A quarter is the usual unit for a mandate.
+    pub period: u64,
+    pub epoch: u64,
+}
+
+impl Rolling {
+    pub fn quarterly(name: &str, epoch: u64) -> Self {
+        Rolling { name: name.to_string(), period: 90 * 86_400, epoch }
+    }
+
+    pub fn period_of(&self, now: u64) -> u64 {
+        now.saturating_sub(self.epoch) / self.period
+    }
+
+    /// The scope in force at `now`. Deterministic, so a payer and a payee
+    /// derive the same one from the same clock.
+    pub fn scope(&self, now: u64) -> String {
+        format!("{}:{}", self.name, self.period_of(now))
+    }
+
+    pub fn ends_at(&self, now: u64) -> u64 {
+        self.epoch + (self.period_of(now) + 1) * self.period
+    }
+}
+
+/// What a payee publishes: the address to pay to, and when it stops being it.
+///
+/// A payer that uses a stale one puts the note in a stale scope, and nothing in
+/// the protocol stops them --- which is why `valid_until` is published rather
+/// than assumed, and why a payee that cares checks what came in against the
+/// scope it expected.
+pub struct Published {
+    pub scope: String,
+    pub address: Address,
+    pub valid_until: u64,
+}
+
+impl ScopedWallet {
+    /// The address to hand out at `now`.
+    pub fn publish(&self, rolling: &Rolling, now: u64) -> Published {
+        let scope = rolling.scope(now);
+        Published { address: self.address(&scope), scope,
+                    valid_until: rolling.ends_at(now) }
+    }
+
+    /// Grant the period in force, expiring when the period does.
+    ///
+    /// The expiry and the roll line up on purpose: a grant that outlived its
+    /// period would be current for a scope nothing is being paid into, which
+    /// looks like access and is not, and a grant that ended early would look
+    /// like revocation and would not be.
+    pub fn grant_current(&self, rolling: &Rolling, grantee: &str, now: u64)
+        -> ViewingGrant
+    {
+        let scope = rolling.scope(now);
+        let ends = rolling.ends_at(now);
+        let days = (ends.saturating_sub(now)).div_ceil(86_400).max(1);
+        self.grant(&scope, grantee, now, days)
+    }
+}
+
+/// Whether this grant is for the period in force.
+///
+/// Separate from `check_grant`, which asks whether a grant is well formed and
+/// current *by its own dates*. This asks the operational question: is it for
+/// the scope money is going into now. A grant can pass one and fail the other,
+/// and the two failures call for different things --- one is a bad grant and
+/// the other is a wallet that has not rolled.
+pub fn is_current_scope(grant: &ViewingGrant, rolling: &Rolling, now: u64) -> bool {
+    grant.scope == rolling.scope(now)
+}
+
+/// What a payee should check about what arrived: that it came into the scope
+/// it published, and not an older one it has since granted away.
+pub fn arrived_off_schedule(ledger: &NoteLedger, owner: &ScopedWallet,
+                            rolling: &Rolling, now: u64, asset_key: &Pedersen)
+    -> Vec<(u64, String)>
+{
+    let mut out = Vec::new();
+    let current = rolling.period_of(now);
+    for period in 0..current {
+        let scope = format!("{}:{}", rolling.name, period);
+        let wallet = owner.wallet(&scope);
+        for (_, opening) in ledger.scan(&wallet, asset_key) {
+            out.push((opening.value, scope.clone()));
+        }
+    }
+    out
+}

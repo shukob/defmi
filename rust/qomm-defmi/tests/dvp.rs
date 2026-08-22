@@ -40,6 +40,17 @@ fn buyer() -> Handle { Identity::from_seed([22u8; 32]).handle(VENUE) }
 const VENUE: &[u8] = b"defmi:test";
 
 fn world(rng: &mut OsRng) -> World {
+    world_with_cash_asset(rng, None)
+}
+
+/// The same, with the cash accounts opened under a currency's own tag.
+///
+/// A tagged cash *leg* over untagged cash *balances* does not verify, and it
+/// should not: the remainder proof opens against the payer's existing balance,
+/// so the tag has to be the one the balance already sits under. That refusal is
+/// what binds the disguise to a real asset, and it is the same property the
+/// securities rail relies on.
+fn world_with_cash_asset(rng: &mut OsRng, cash_asset: Option<u32>) -> World {
     let key = Pedersen::new(b"qomm:defmi:v1");
     let registry = AssetRegistry::new(key.clone(), 16);
     let (secret, public) = deal_quorum(7, 3, rng).unwrap();
@@ -56,10 +67,14 @@ fn world(rng: &mut OsRng) -> World {
                     asset_key.commit_u64(sec.0, &sec.1));
     securities.open(&account_of(&buyer().point, SECURITIES_RAIL),
                     asset_key.commit_u64(0, &Scalar::random(rng)));
+    let cash_key = match cash_asset {
+        Some(a) => key.with_value_generator(registry.tags[a as usize]),
+        None => key.clone(),
+    };
     cash.open(&account_of(&buyer().point, CASH_RAIL),
-              key.commit_u64(cash_holding.0, &cash_holding.1));
+              cash_key.commit_u64(cash_holding.0, &cash_holding.1));
     cash.open(&account_of(&seller().point, CASH_RAIL),
-              key.commit_u64(0, &Scalar::random(rng)));
+              cash_key.commit_u64(0, &Scalar::random(rng)));
 
     let venue = Venue::new(key.clone(), &Bounds::default(), public.clone());
     World {
@@ -100,8 +115,25 @@ fn instruction(w: &World, rng: &mut OsRng, nonce: u8)
 
 fn package(w: &World, rng: &mut OsRng, quantity: u64, price: u64, tag_asset: u32, nonce: u8)
     -> Result<DvpPackage, &'static str> {
+    packaged(w, rng, quantity, price, tag_asset, nonce, None)
+}
+
+/// The same, with the cash rail carrying a tag of its own.
+///
+/// `cash_asset` of `None` is the single-currency case the rail was built for,
+/// where hiding *which cash* means nothing. With more than one settlement
+/// currency it means the same thing hiding the instrument does, and it is the
+/// same construction applied once more.
+fn packaged(w: &World, rng: &mut OsRng, quantity: u64, price: u64,
+            tag_asset: u32, nonce: u8, cash_asset: Option<u32>)
+    -> Result<DvpPackage, &'static str> {
     let (instruction, openings) = instruction(w, rng, nonce);
     let (tag, gamma) = w.registry.blind(tag_asset, false, rng).unwrap();
+    let cash = cash_asset.map(|a| w.registry.blind(a, false, rng).unwrap());
+    let (cash_tag, cash_gamma) = match &cash {
+        Some((t, g)) => (Some(t), *g),
+        None => (None, Scalar::ZERO),
+    };
     build_package(
         &w.key, instruction, &w.defmi.securities, &w.defmi.cash,
         quantity, price,
@@ -109,7 +141,7 @@ fn package(w: &World, rng: &mut OsRng, quantity: u64, price: u64, tag_asset: u32
             securities_balance: w.sec.0, securities_blinding: w.sec.1,
             cash_balance: w.cash.0, cash_blinding: w.cash.1,
         },
-        &openings, Some(&tag), &gamma, rng,
+        &openings, Some(&tag), &gamma, cash_tag, &cash_gamma, rng,
     ).map(|(p, _)| p)
 }
 
@@ -349,4 +381,70 @@ fn the_unchecked_opening_is_closed_once_a_ledger_has_an_issuer() {
     let issuer = SigningKey::generate(&mut rng);
     let mut ledger = Ledger::under_issuer(key.clone(), 32, issuer.verifying_key());
     ledger.open(b"alice", key.commit_u64(1_000, &Scalar::random(&mut rng)));
+}
+
+
+// --- a cash rail with a currency of its own --------------------------------
+
+#[test]
+fn a_tagged_cash_rail_settles_the_same_way() {
+    // The last thing on `DEFMI.md`'s missing list that was a build rather than
+    // a statement of an inherent limit: the cash leg could not carry a tag, so
+    // a second settlement currency had nowhere to hide.
+    let mut rng = OsRng;
+    let mut w = world_with_cash_asset(&mut rng, Some(0));
+    let p = packaged(&w, &mut rng, QTY, PRICE, 3, 1, Some(0)).unwrap();
+    let receipt = w.defmi.settle(&p, 1_000, &mut rng);
+    assert_eq!(receipt.status, Ok(()));
+}
+
+#[test]
+fn a_tagged_cash_leg_over_untagged_balances_is_refused() {
+    // The property that binds the disguise to a real asset: the remainder proof
+    // opens against the balance the payer already has, so a leg cannot claim a
+    // currency the account is not denominated in.
+    let mut rng = OsRng;
+    let mut w = world(&mut rng);
+    let p = packaged(&w, &mut rng, QTY, PRICE, 3, 1, Some(0)).unwrap();
+    assert_eq!(w.defmi.settle(&p, 1_000, &mut rng).status,
+               Err("remainder does not equal balance minus amount"));
+}
+
+#[test]
+fn a_tagged_cash_leg_moved_to_another_currency_is_refused() {
+    let mut rng = OsRng;
+    let mut w = world_with_cash_asset(&mut rng, Some(0));
+    let mut p = packaged(&w, &mut rng, QTY, PRICE, 3, 1, Some(0)).unwrap();
+    // re-tag the leg without redoing the link
+    let (elsewhere, _) = w.registry.blind(1, false, &mut rng).unwrap();
+    p.cash_leg.tag = Some(elsewhere);
+    let receipt = w.defmi.settle(&p, 1_000, &mut rng);
+    assert!(receipt.status.is_err());
+}
+
+#[test]
+fn the_reference_the_product_is_about_cannot_be_swapped() {
+    // The reference is what ties `quantity * price` to the leg. Moving it moves
+    // the amount the cash rail is being asked to transfer, which is the whole
+    // reason it is a separate commitment with a link rather than the leg itself.
+    let mut rng = OsRng;
+    let mut w = world_with_cash_asset(&mut rng, Some(0));
+    let mut p = packaged(&w, &mut rng, QTY, PRICE, 3, 1, Some(0)).unwrap();
+    p.cash_reference = w.key.commit_u64(QTY * PRICE + 1, &Scalar::random(&mut rng));
+    let receipt = w.defmi.settle(&p, 1_000, &mut rng);
+    assert!(receipt.status.is_err());
+}
+
+#[test]
+fn an_untagged_cash_rail_still_settles_and_the_package_is_the_same_shape() {
+    // The link is a proof of the obvious when the generators coincide, and
+    // paying for it is the price of not having two package shapes on the wire.
+    let mut rng = OsRng;
+    let mut w = world(&mut rng);
+    let tagged = packaged(&w, &mut rng, QTY, PRICE, 3, 1, Some(0)).unwrap();
+    let bare = packaged(&w, &mut rng, QTY, PRICE, 3, 2, None).unwrap();
+    assert_eq!(tagged.cash_link.z_value.to_bytes().len(),
+               bare.cash_link.z_value.to_bytes().len());
+    let receipt = w.defmi.settle(&bare, 1_000, &mut rng);
+    assert_eq!(receipt.status, Ok(()));
 }

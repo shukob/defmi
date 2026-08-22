@@ -441,8 +441,11 @@ bank's existing pipeline.
 - **The staleness measurement has selection bias.** UniswapX fills are the trades
   that happened; the ones that did not are the interesting ones.
 - **The VOLE-in-the-Head arm is one linear statement**, not the MPC protocol of
-  2026/337, and the linear-code instantiation that would shrink its proof
-  fourfold is arithmetic in `run_voleith.py` rather than code.
+  2026/337, and the linear-code instantiation is arithmetic in `run_voleith.py`
+  rather than code. It also shrinks the proof 2.4x and not fourfold: a general
+  code is homomorphic only across blocks, so an inner product with a distinct
+  coefficient per value needs the paper's degree-2 protocol and its 2x
+  overhead. The fourfold figure counted the code swap and not the protocol.
 - **Two of the five were found through a third paper's related-work section**,
   not through a search of our own. That has now happened twice in this project.
 
@@ -504,11 +507,26 @@ may be able to replay the check and see whose contribution does not match.
 **That is a hypothesis, not a result**, and what would falsify it is the check
 turning out not to expose per-party contributions.
 
-### 9.4 Robust reconstruction is not open, it is unbuilt
+### 9.4 Robust reconstruction: built, run, and reproduced
 
 `ACCOUNTABILITY.md` section 3.6: at `n = 7`, `t = 2` the shares are `RS[7,3]`
 with distance 5, so Berlekamp--Welch corrects `T = 2` errors and names the
 senders, locally. The costs are collecting `n` shares instead of `2t+1` (40% more
 opening traffic) and the fact that unreduced products are `RS[7,5]` and correct
-only one error. **This is engineering, and it is the cheapest thing on this
-page.**
+only one error.
+
+**It was the cheapest thing on this page and it is now done.** The operative
+line turned out to be `n >= 4t+1` rather than `t < n/3`, which makes a decoder
+sufficient and the segmenting, checkpoints and player elimination unnecessary.
+At nine nodes and threshold two the protocol corrects two wrong shares of a
+masked product, names who sent them and does not stop; three refuses past the
+capacity, and seven refuses to start rather than pretending. Measured on two
+machines with two independent builds
+(`artifacts/robust_atlas.json`, `robust_atlas_host_c.json`), and the decoder is
+in Rust as `qomm-zk/src/shamir.rs` beside the commitments, because the binding
+chain now deals over the same field.
+
+What is *not* robust is stated in the same place: the double sharings, the
+output opening and the input phase. The input phase is the one that matters ---
+inputs are the sum of every node's share, so one missing node destroys the
+value and no decoding helps.

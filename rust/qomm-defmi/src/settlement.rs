@@ -44,7 +44,16 @@ pub struct DvpPackage {
     /// the same proof covers the untagged case, so the wire format does not
     /// advertise which one is in use.
     pub quantity_link: CrossGeneratorProof,
+    /// `quantity * price`, under the **base** generator, because that is where
+    /// the instruction's factors are. Without it a tagged cash leg has nothing
+    /// the product proof can be about: the leg's commitment is under the cash
+    /// asset's tag and the product of two base-generator commitments is not.
+    pub cash_reference: RistrettoPoint,
     pub value_proof: ProductProof,
+    /// The cash leg moves what the reference says. Same shape as
+    /// `quantity_link` and for the same reason, and it covers the untagged case
+    /// too so the wire does not advertise which is in use.
+    pub cash_link: CrossGeneratorProof,
 }
 
 pub struct Receipt {
@@ -136,6 +145,7 @@ pub fn build_package<R: RngCore + CryptoRng>(
     quantity: u64, price: u64, holdings: &Holdings,
     openings: &InstructionOpenings,
     securities_tag: Option<&BlindedTag>, securities_gamma: &Scalar,
+    cash_tag: Option<&BlindedTag>, cash_gamma: &Scalar,
     rng: &mut R,
 ) -> Result<(DvpPackage, Carry), &'static str> {
     // Both amounts are pinned by the instruction --- the quantity through the
@@ -147,7 +157,7 @@ pub fn build_package<R: RngCore + CryptoRng>(
     let value = quantity.checked_mul(price).ok_or("cash amount overflows")?;
     let (cash_leg, cash_secrets) = cash.build_transfer(
         holdings.cash_balance, &holdings.cash_blinding, value,
-        &[SETTLE_DOMAIN, b":cash"].concat(), None, &Scalar::ZERO, true, rng)?;
+        &[SETTLE_DOMAIN, b":cash"].concat(), cash_tag, cash_gamma, true, rng)?;
 
     let leg_generator = securities_tag.map(|t| t.point).unwrap_or(key.g);
     let quantity_link = prove_same_value(
@@ -158,11 +168,23 @@ pub fn build_package<R: RngCore + CryptoRng>(
     // The quantity is taken from the instruction rather than from the leg: the
     // link above already ties them, and the instruction is what the quorum
     // signed.
+    // The product lives under the base generator, so it is proved about a
+    // reference commitment there and the leg is tied to that reference. When
+    // the cash rail is untagged the two generators coincide and the link is a
+    // proof of the obvious --- which is the right price for not having two
+    // package shapes.
+    let reference_blinding = Scalar::random(rng);
+    let cash_reference = key.commit_u64(value, &reference_blinding);
     let value_proof = prove_product(
         key, &mut value_transcript(), &instruction.price_commitment,
         &Scalar::from(price), &openings.price,
         &Scalar::from(quantity), &openings.amount,
-        &cash_secrets.amount_blinding, rng);
+        &reference_blinding, rng);
+    let cash_generator = cash_tag.map(|t| t.point).unwrap_or(key.g);
+    let cash_link = prove_same_value(
+        key, &mut cash_link_transcript(), &cash_generator, &key.g,
+        &cash_leg.amount_commitment, &cash_reference,
+        &Scalar::from(value), &cash_secrets.amount_blinding, &reference_blinding, rng);
 
     let who = Sides::of(&instruction);
     let carry = Carry {
@@ -178,7 +200,8 @@ pub fn build_package<R: RngCore + CryptoRng>(
             securities_to: who.securities_to,
             cash_from: who.cash_from,
             cash_to: who.cash_to,
-            securities_leg, cash_leg, quantity_link, value_proof,
+            securities_leg, cash_leg, quantity_link, cash_reference,
+            value_proof, cash_link,
         },
         carry,
     ))
@@ -186,6 +209,7 @@ pub fn build_package<R: RngCore + CryptoRng>(
 
 fn link_transcript() -> Transcript { Transcript::new(b"qomm:defmi:qty-link") }
 fn value_transcript() -> Transcript { Transcript::new(b"qomm:defmi:value") }
+fn cash_link_transcript() -> Transcript { Transcript::new(b"qomm:defmi:cash-link") }
 
 pub struct Defmi {
     pub key: Pedersen,
@@ -246,8 +270,15 @@ impl Defmi {
         batch.push(s, p);
         let (s, p) = product_terms(
             &self.key, &mut value_transcript(), &package.instruction.price_commitment,
-            &package.instruction.amount_commitment, &package.cash_leg.amount_commitment,
+            &package.instruction.amount_commitment, &package.cash_reference,
             &package.value_proof, &Batch::weight(rng));
+        batch.push(s, p);
+        let cash_generator = package.cash_leg.tag.as_ref()
+            .map(|t| t.point).unwrap_or(self.key.g);
+        let (s, p) = same_value_terms(
+            &self.key, &mut cash_link_transcript(), &cash_generator, &self.key.g,
+            &package.cash_leg.amount_commitment, &package.cash_reference,
+            &package.cash_link, &Batch::weight(rng));
         batch.push(s, p);
         if !batch.verify() {
             return Err("the legs do not match what the instruction says");
