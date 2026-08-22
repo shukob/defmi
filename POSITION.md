@@ -399,14 +399,22 @@ bank's existing pipeline.
 
 ## 8. What is not finished
 
-- **No formal threat model.** The "security proof: none" cell is not a rhetorical
-  concession. There is no theorem here.
+- **A threat model and proofs, but no UC treatment.** `security.tex` states the
+  setting and proves soundness of the input check, that naming is sound and never
+  names an honest party, unique naming from the Reed--Solomon distance, and
+  statistical hiding of the opening. What is *not* proved: the underlying MPC
+  protocol (assumed and cited), and composition, which is argued rather than
+  shown. Writing those proofs is what found the flaw in the next bullet.
 - **Accountability, partly closed since this was written.** The engine now names
   the party that sent a malformed share (`locate-inconsistent-shares.patch`,
   1.33x traffic, rounds unchanged), and the per-party input check names the node
-  that fed a value other than the one it was dealt --- in the circuit, for
-  **zero extra rounds and 0.068% more traffic** than merely detecting one. A
-  verdict is still not a repair: both name, neither prevents.
+  that fed a value other than the one it was dealt --- in the circuit, for **one
+  extra round and 0.39% more traffic** than merely detecting one, at soundness
+  `2^-245`. An earlier version of that check derived its coefficients from the
+  dealer's commitments, which a node reads before it feeds the engine; writing
+  the proof found that a node could then choose an error in their kernel and pass
+  with probability 1. The challenge is now drawn after the input phase. A verdict
+  is still not a repair: both name, neither prevents.
   `ACCOUNTABILITY.md` has the five rungs and where each mechanism sits.
 - **No robustness --- but this one is an unbuilt saving rather than a gap.**
   `T = 2` of 7 is `t < n/3`, the regime where Goyal--Song--Zhu's guaranteed output
