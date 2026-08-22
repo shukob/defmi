@@ -401,10 +401,13 @@ bank's existing pipeline.
 
 - **No formal threat model.** The "security proof: none" cell is not a rhetorical
   concession. There is no theorem here.
-- **No accountability.** Section 4 has it; this does not. The quote proof shows
-  the winner was right, not who broke it if it was not, and the only measured
-  price for the full package is Rivinius et al.'s 11x to 20x in a harder regime.
-  `ACCOUNTABILITY.md` has the ladder and where each mechanism here sits on it.
+- **Accountability, partly closed since this was written.** The engine now names
+  the party that sent a malformed share (`locate-inconsistent-shares.patch`,
+  1.33x traffic, rounds unchanged), and the per-party input check names the node
+  that fed a value other than the one it was dealt (7.4x the check, and a
+  *narrower* field than the aggregate one). What remains is the circuit emission
+  for the second, and a verdict is still not a repair: both name, neither
+  prevents. `ACCOUNTABILITY.md` has the five rungs and where each mechanism sits.
 - **No robustness --- but this one is an unbuilt saving rather than a gap.**
   `T = 2` of 7 is `t < n/3`, the regime where Goyal--Song--Zhu's guaranteed output
   delivery needs no broadcast channel, at 5.5 to 7.5 field elements per party per
