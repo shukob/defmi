@@ -416,13 +416,21 @@ bank's existing pipeline.
   with probability 1. The challenge is now drawn after the input phase. A verdict
   is still not a repair: both name, neither prevents.
   `ACCOUNTABILITY.md` has the five rungs and where each mechanism sits.
-- **No robustness --- but this one is an unbuilt saving rather than a gap.**
-  `T = 2` of 7 is `t < n/3`, the regime where Goyal--Song--Zhu's guaranteed output
-  delivery needs no broadcast channel, at 5.5 to 7.5 field elements per party per
-  multiplication. Measured here, `malicious-shamir-party.x` spends **8.0 online
-  and 48.2 in a single-phase run**, so GSZ's total is cheaper than this stack's
-  online phase alone while giving strictly more. **The reason there is no
-  robustness is the engine, not the setting.**
+- **Robustness, built.** `T = 2` of 7 is `t < n/3`, and the useful line turns
+  out to be `n >= 4T+1` --- the point at which a degree-`2T` product is directly
+  correctable, so a decoder replaces GSZ's segmenting, checkpoints and player
+  elimination entirely. Two of the three things that would have had to be
+  written are already in MP-SPDZ, in ATLAS rather than in Shamir: the rotating
+  king and the random double sharings. Removing the king --- the one place a
+  consistent sharing of the wrong value can be introduced --- and having every
+  party decode the masked product for itself gives, measured at `n = 9`:
+  **the correct answer with the culprits named, under one and two liars, without
+  stopping**, at 18.222 elements per party per multiplication against the 64.236
+  the deployed engine spends, with fewer rounds
+  (`robust-atlas.patch`, `artifacts/robust_atlas.json`). What is not robust is
+  the preprocessing, which is allowed to abort because it consumes no inputs.
+  What it costs is two more institutions, which is the risk this register says
+  matters most.
 - **The differential-privacy noise is generated outside the MPC**, so the
   published quote is noised but not *provably* noised.
 - **Selective disclosure is unimplemented.** The design says which fields a
